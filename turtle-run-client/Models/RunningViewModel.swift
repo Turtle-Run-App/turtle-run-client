@@ -53,20 +53,28 @@ class RunningViewModel: ObservableObject {
                     [
                         "latitude": point.latitude,
                         "longitude": point.longitude,
-                        "timestamp": ISO8601DateFormatter().string(from: point.timestamp),
-                        "cumulativeDistance": point.cumulativeDistance
+                        "timestamp": ISO8601DateFormatter().string(from: point.timestamp)
                     ]
                 }
                 let payload: [String: Any] = [
                     "workoutId": workout.uuid.uuidString,
+                    "startTime": ISO8601DateFormatter().string(from: workout.startDate),
+                    "endTime": ISO8601DateFormatter().string(from: workout.endDate),
+                    "workoutType": "running",
+                    "distance": workout.totalDistance?.doubleValue(for: .meter()) ?? 0,
+                    "duration": Int(workout.duration),
+                    "calories": workout.totalEnergyBurned?.doubleValue(for: .kilocalorie()) ?? 0,
+                    "avgHeartRate": 0, // 필요시 계산 추가
                     "route": routeArray
                 ]
                 guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else {
                     DispatchQueue.main.async { self?.syncStatus = "JSON 변환 실패" }
                     return
                 }
-                // 4. API POST
-                var request = URLRequest(url: URL(string: "http://127.0.0.1/syncdata")!)
+                if let jsonString = String(data: jsonData, encoding: .utf8) {
+                    print("실제 동기화 전송 데이터:\n\(jsonString)")
+                }
+                var request = URLRequest(url: URL(string: "http://127.0.0.1/api/v1/healthkit/sync")!)
                 request.httpMethod = "POST"
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
                 request.httpBody = jsonData
@@ -84,5 +92,46 @@ class RunningViewModel: ObservableObject {
                 task.resume()
             }
         }
+    }
+    
+    // 더미 러닝 데이터 동기화
+    func syncDummyWorkoutData() {
+        let dummy: [String: Any] = [
+            "workoutId": UUID().uuidString,
+            "startTime": "2024-01-01T10:00:00Z",
+            "endTime": "2024-01-01T10:30:00Z",
+            "workoutType": "running",
+            "distance": 5000.0,
+            "duration": 1800,
+            "calories": 300,
+            "avgHeartRate": 145,
+            "route": [
+                ["latitude": 37.5665, "longitude": 126.9780, "timestamp": "2024-01-01T10:00:00Z"],
+                ["latitude": 37.5666, "longitude": 126.9781, "timestamp": "2024-01-01T10:00:30Z"]
+            ]
+        ]
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: dummy) else {
+            self.syncStatus = "더미 데이터 JSON 변환 실패"
+            return
+        }
+        if let jsonString = String(data: jsonData, encoding: .utf8) {
+            print("더미 동기화 전송 데이터:\n\(jsonString)")
+        }
+        var request = URLRequest(url: URL(string: "http://127.0.0.1/api/v1/healthkit/sync")!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = jsonData
+        let task = URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    self?.syncStatus = "더미 동기화 실패: \(error.localizedDescription)"
+                } else if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
+                    self?.syncStatus = "더미 동기화 실패: 서버 응답 \(httpResponse.statusCode)"
+                } else {
+                    self?.syncStatus = "더미 동기화 성공"
+                }
+            }
+        }
+        task.resume()
     }
 } 
