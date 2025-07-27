@@ -7,6 +7,11 @@ struct ProfileMenuScreen: View {
     @State private var showRunningStatsScreen = false
     @State private var showShellStuatsScreen = false
     @State private var animatedSPValue = 0
+    // 추가: 러닝 데이터 수집 관련 상태
+    @StateObject private var runningViewModel = RunningViewModel()
+    @State private var showDataAlert = false
+    @State private var dataAlertMessage = ""
+    @State private var showWorkoutDetailScreen = false
     
     // 프로필 데이터 (추후 ViewModel로 분리 가능)
     private let userName = "터틀러너"
@@ -75,6 +80,12 @@ struct ProfileMenuScreen: View {
         }
         .fullScreenCover(isPresented: $showShellStuatsScreen) {
             PersonalShellStatusScreen()
+        }
+        .fullScreenCover(isPresented: $showWorkoutDetailScreen) {
+            WorkoutDetailScreen(runningViewModel: runningViewModel)
+        }
+        .alert(isPresented: $showDataAlert) {
+            Alert(title: Text("데이터 수집 결과"), message: Text(dataAlertMessage), dismissButton: .default(Text("확인")))
         }
     }
     
@@ -155,6 +166,27 @@ struct ProfileMenuScreen: View {
                     action: {
                         print("Navigate to 종족 관리")
                         // TODO: 종족 관리 페이지로 이동
+                    }
+                )
+                // 데이터 수집
+                ProfileMenuCard(
+                    icon: "📥",
+                    title: "데이터 수집",
+                    subtitle: "러닝 데이터 HealthKit 연동 및 수집",
+                    isFullWidth: true,
+                    action: {
+                        // 최근 워크아웃 상세 데이터 로드 (권한 요청 포함)
+                        runningViewModel.loadLatestWorkoutDetailedData()
+                        
+                        // 잠시 후 상세 화면으로 이동
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                            if runningViewModel.isAuthorized {
+                                showWorkoutDetailScreen = true
+                            } else {
+                                dataAlertMessage = runningViewModel.errorMessage ?? "HealthKit 권한이 필요합니다."
+                                showDataAlert = true
+                            }
+                        }
                     }
                 )
             }
