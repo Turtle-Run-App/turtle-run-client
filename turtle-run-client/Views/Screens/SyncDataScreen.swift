@@ -2,23 +2,23 @@ import SwiftUI
 import HealthKit
 
 struct SyncDataScreen: View {
-    @StateObject private var viewModel = RunningViewModel()
+    @StateObject private var workoutDataService = WorkoutDataService()
     
     var body: some View {
         NavigationView {
             VStack(spacing: 24) {
-                if let error = viewModel.errorMessage {
+                if let error = workoutDataService.errorMessage {
                     Text(error).foregroundColor(.red)
                 }
-                if !viewModel.isAuthorized {
+                if !workoutDataService.isAuthorized {
                     Button("HealthKit 권한 요청") {
-                        viewModel.requestHealthKitAuthorization()
+                        workoutDataService.requestHealthKitAuthorization()
                     }
                 } else {
                     Button("동기화") {
-                        viewModel.syncLatestWorkoutRoute()
+                        workoutDataService.syncLatestWorkoutRoute()
                     }
-                    if let status = viewModel.syncStatus {
+                    if let status = workoutDataService.syncStatus {
                         Text(status)
                             .foregroundColor(status.contains("성공") ? .green : .red)
                     }
@@ -30,8 +30,8 @@ struct SyncDataScreen: View {
     }
 }
 
-// Preview에서만 사용할 MockViewModel
-final class PreviewSyncViewModel: RunningViewModel {
+// Preview에서만 사용할 MockService
+final class PreviewSyncService: WorkoutDataService {
     override init() { super.init() }
     override func requestHealthKitAuthorization() {}
     override func syncLatestWorkoutRoute() {}
@@ -53,39 +53,39 @@ private enum PreviewState { case 권한없음, 에러, 성공, 실패 }
 private struct SyncDataScreenPreview: View {
     let state: PreviewState
     var body: some View {
-        let vm = PreviewSyncViewModel()
+        let service = PreviewSyncService()
         switch state {
         case .권한없음:
-            vm.isAuthorized = false
+            service.isAuthorized = false
         case .에러:
-            vm.isAuthorized = false
-            vm.errorMessage = "HealthKit 권한 요청 중 에러가 발생했습니다."
+            service.isAuthorized = false
+            service.errorMessage = "HealthKit 권한 요청 중 에러가 발생했습니다."
         case .성공:
-            vm.isAuthorized = true
-            vm.syncStatus = "동기화 성공"
+            service.isAuthorized = true
+            service.syncStatus = "동기화 성공"
         case .실패:
-            vm.isAuthorized = true
-            vm.syncStatus = "동기화 실패: 네트워크 오류"
+            service.isAuthorized = true
+            service.syncStatus = "동기화 실패: 네트워크 오류"
         }
-        return SyncDataScreenForPreview(viewModel: vm)
+        return SyncDataScreenForPreview(workoutDataService: service)
             .previewDisplayName("\(state)")
     }
 }
 
 // Preview 전용 내부 뷰
 private struct SyncDataScreenForPreview: View {
-    @StateObject var viewModel: PreviewSyncViewModel
+    @StateObject var workoutDataService: PreviewSyncService
     var body: some View {
         NavigationView {
             VStack(spacing: 24) {
-                if let error = viewModel.errorMessage {
+                if let error = workoutDataService.errorMessage {
                     Text(error).foregroundColor(.red)
                 }
-                if !viewModel.isAuthorized {
+                if !workoutDataService.isAuthorized {
                     Button("HealthKit 권한 요청") {}
                 } else {
                     Button("동기화") {}
-                    if let status = viewModel.syncStatus {
+                    if let status = workoutDataService.syncStatus {
                         Text(status)
                             .foregroundColor(status.contains("성공") ? .green : .red)
                     }

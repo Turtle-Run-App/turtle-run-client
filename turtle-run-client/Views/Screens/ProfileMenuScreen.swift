@@ -8,7 +8,7 @@ struct ProfileMenuScreen: View {
     @State private var showShellStuatsScreen = false
     @State private var animatedSPValue = 0
     // 추가: 러닝 데이터 수집 관련 상태
-    @StateObject private var runningViewModel = RunningViewModel()
+    @StateObject private var workoutDataService = WorkoutDataService()
     @State private var showDataAlert = false
     @State private var dataAlertMessage = ""
     @State private var showWorkoutDetailScreen = false
@@ -82,7 +82,7 @@ struct ProfileMenuScreen: View {
             PersonalShellStatusScreen()
         }
         .fullScreenCover(isPresented: $showWorkoutDetailScreen) {
-            WorkoutDetailScreen(runningViewModel: runningViewModel)
+            WorkoutDetailScreen(workoutDataService: workoutDataService)
         }
         .alert(isPresented: $showDataAlert) {
             Alert(title: Text("데이터 수집 결과"), message: Text(dataAlertMessage), dismissButton: .default(Text("확인")))
@@ -176,14 +176,14 @@ struct ProfileMenuScreen: View {
                     isFullWidth: true,
                     action: {
                         // 최근 워크아웃 상세 데이터 로드 (권한 요청 포함)
-                        runningViewModel.loadLatestWorkoutDetailedData()
+                        workoutDataService.loadLatestWorkoutDetailedData()
                         
                         // 잠시 후 상세 화면으로 이동
                         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                            if runningViewModel.isAuthorized {
+                            if workoutDataService.isAuthorized {
                                 showWorkoutDetailScreen = true
                             } else {
-                                dataAlertMessage = runningViewModel.errorMessage ?? "HealthKit 권한이 필요합니다."
+                                dataAlertMessage = workoutDataService.errorMessage ?? "HealthKit 권한이 필요합니다."
                                 showDataAlert = true
                             }
                         }

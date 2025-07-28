@@ -3,7 +3,7 @@ import HealthKit
 
 struct WorkoutDetailScreen: View {
     @Environment(\.dismiss) private var dismiss
-    @ObservedObject var runningViewModel: RunningViewModel
+    @ObservedObject var workoutDataService: WorkoutDataService
     
     var body: some View {
         ZStack {
@@ -21,7 +21,7 @@ struct WorkoutDetailScreen: View {
                 )
                 .zIndex(100)
                 
-                if runningViewModel.isLoadingDetailedData {
+                if workoutDataService.isLoadingDetailedData {
                     VStack {
                         Spacer()
                         LoadingIndicator()
@@ -31,7 +31,7 @@ struct WorkoutDetailScreen: View {
                             .padding(.top, 16)
                         Spacer()
                     }
-                } else if let workoutData = runningViewModel.latestWorkoutData {
+                } else if let workoutData = workoutDataService.latestWorkoutData {
                     ScrollView {
                         VStack(spacing: 20) {
                             // 기본 정보 카드
@@ -85,8 +85,8 @@ struct WorkoutDetailScreen: View {
         }
         .navigationBarHidden(true)
         .onAppear {
-            if runningViewModel.latestWorkoutData == nil {
-                runningViewModel.loadLatestWorkoutDetailedData()
+            if workoutDataService.latestWorkoutData == nil {
+                workoutDataService.loadLatestWorkoutDetailedData()
             }
         }
     }
@@ -394,5 +394,5 @@ struct WorkoutDetailScreen: View {
 }
 
 #Preview {
-    WorkoutDetailScreen(runningViewModel: RunningViewModel())
+    WorkoutDetailScreen(workoutDataService: WorkoutDataService())
 } 
