@@ -53,28 +53,20 @@ class RunningViewModel: ObservableObject {
                     [
                         "latitude": point.latitude,
                         "longitude": point.longitude,
-                        "timestamp": ISO8601DateFormatter().string(from: point.timestamp)
+                        "timestamp": ISO8601DateFormatter().string(from: point.timestamp),
+                        "cumulativeDistance": point.cumulativeDistance
                     ]
                 }
                 let payload: [String: Any] = [
                     "workoutId": workout.uuid.uuidString,
-                    "startTime": ISO8601DateFormatter().string(from: workout.startDate),
-                    "endTime": ISO8601DateFormatter().string(from: workout.endDate),
-                    "workoutType": "running",
-                    "distance": workout.totalDistance?.doubleValue(for: .meter()) ?? 0,
-                    "duration": Int(workout.duration),
-                    "calories": workout.totalEnergyBurned?.doubleValue(for: .kilocalorie()) ?? 0,
-                    "avgHeartRate": 0, // 필요시 계산 추가
                     "route": routeArray
                 ]
                 guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else {
                     DispatchQueue.main.async { self?.syncStatus = "JSON 변환 실패" }
                     return
                 }
-                if let jsonString = String(data: jsonData, encoding: .utf8) {
-                    print("실제 동기화 전송 데이터:\n\(jsonString)")
-                }
-                var request = URLRequest(url: URL(string: "http://127.0.0.1/api/v1/healthkit/sync")!)
+                // 4. API POST
+                var request = URLRequest(url: URL(string: "http://127.0.0.1/syncdata")!)
                 request.httpMethod = "POST"
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
                 request.httpBody = jsonData
