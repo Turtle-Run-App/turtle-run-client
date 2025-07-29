@@ -15,15 +15,9 @@ struct SyncDataScreen: View {
                         viewModel.requestHealthKitAuthorization()
                     }
                 } else {
-                    #if targetEnvironment(simulator)
-                    Button("더미 데이터 동기화") {
-                        viewModel.syncDummyWorkoutData()
-                    }
-                    #else
                     Button("동기화") {
                         viewModel.syncLatestWorkoutRoute()
                     }
-                    #endif
                     if let status = viewModel.syncStatus {
                         Text(status)
                             .foregroundColor(status.contains("성공") ? .green : .red)
@@ -41,7 +35,6 @@ final class PreviewSyncViewModel: RunningViewModel {
     override init() { super.init() }
     override func requestHealthKitAuthorization() {}
     override func syncLatestWorkoutRoute() {}
-    override func syncDummyWorkoutData() {}
 }
 
 struct SyncDataScreen_Previews: PreviewProvider {
@@ -91,7 +84,7 @@ private struct SyncDataScreenForPreview: View {
                 if !viewModel.isAuthorized {
                     Button("HealthKit 권한 요청") {}
                 } else {
-                    Button("더미 데이터 동기화") {}
+                    Button("동기화") {}
                     if let status = viewModel.syncStatus {
                         Text(status)
                             .foregroundColor(status.contains("성공") ? .green : .red)
