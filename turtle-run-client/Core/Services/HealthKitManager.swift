@@ -80,18 +80,14 @@ class HealthKitManager {
                 
                 if done {
                     print("✅ Location query completed, total locations: \(allLocations.count)")
-                    // 누적 거리 계산
+                    // 위치 포인트 생성
                     var points: [RunningLocationPoint] = []
-                    var totalDistance: Double = 0
-                    for (i, loc) in allLocations.enumerated() {
-                        if i > 0 {
-                            totalDistance += loc.distance(from: allLocations[i-1])
-                        }
+                    for loc in allLocations {
                         points.append(RunningLocationPoint(
                             latitude: loc.coordinate.latitude,
                             longitude: loc.coordinate.longitude,
                             timestamp: loc.timestamp,
-                            cumulativeDistance: totalDistance
+                            cumulativeDistance: 0
                         ))
                     }
                     print("🎯 Created \(points.count) route points")

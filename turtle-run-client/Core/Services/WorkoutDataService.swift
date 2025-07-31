@@ -8,6 +8,7 @@ class WorkoutDataService: ObservableObject {
     @Published var latestWorkoutData: WorkoutDetailedData?
     @Published var isLoadingDetailedData: Bool = false
     @Published var syncStatus: String? = nil
+    @Published var isInitialSyncInProgress: Bool = false
     
     private let healthKitManager = HealthKitManager.shared
     
@@ -25,7 +26,79 @@ class WorkoutDataService: ObservableObject {
         }
     }
     
-    // MARK: - Latest Workout Data
+    // MARK: - Initial Workout Data Sync
+    func syncInitialWorkoutData() {
+        isInitialSyncInProgress = true
+        syncStatus = "초기 데이터 동기화 시작..."
+        
+        // 먼저 권한 확인 및 요청
+        healthKitManager.requestAuthorization { [weak self] success, error in
+            DispatchQueue.main.async {
+                self?.isAuthorized = success
+                if let error = error {
+                    self?.errorMessage = error.localizedDescription
+                    self?.isInitialSyncInProgress = false
+                    self?.syncStatus = "권한 요청 실패"
+                    return
+                }
+                
+                if !success {
+                    self?.errorMessage = "HealthKit 권한이 필요합니다."
+                    self?.isInitialSyncInProgress = false
+                    self?.syncStatus = "권한 거부됨"
+                    return
+                }
+                
+                // 권한이 있으면 모든 러닝 워크아웃 데이터 수집 및 동기화
+                self?.healthKitManager.fetchRecentRunningWorkouts(limit: 50) { workouts in
+                    guard !workouts.isEmpty else {
+                        DispatchQueue.main.async {
+                            self?.isInitialSyncInProgress = false
+                            self?.syncStatus = "동기화할 러닝 기록이 없습니다."
+                        }
+                        return
+                    }
+                    
+                    self?.syncAllWorkoutData(workouts: workouts)
+                }
+            }
+        }
+    }
+    
+    private func syncAllWorkoutData(workouts: [HKWorkout]) {
+        let group = DispatchGroup()
+        var allWorkoutData: [WorkoutDetailedData] = []
+        var syncErrors: [String] = []
+        
+        for (index, workout) in workouts.enumerated() {
+            group.enter()
+            
+            healthKitManager.fetchCompleteWorkoutData(for: workout) { detailedData in
+                allWorkoutData.append(detailedData)
+                
+                // 각 워크아웃 데이터를 서버에 동기화
+                self.postWorkoutData(detailedData) { success, error in
+                    if !success {
+                        syncErrors.append("워크아웃 \(workout.uuid.uuidString): \(error ?? "알 수 없는 오류")")
+                    }
+                    group.leave()
+                }
+            }
+        }
+        
+        group.notify(queue: .main) {
+            self.isInitialSyncInProgress = false
+            
+            if syncErrors.isEmpty {
+                self.syncStatus = "초기 동기화 완료: \(allWorkoutData.count)개 워크아웃"
+            } else {
+                self.syncStatus = "동기화 완료 (일부 오류: \(syncErrors.count)개)"
+                self.errorMessage = syncErrors.joined(separator: "\n")
+            }
+        }
+    }
+    
+    // MARK: - Latest Workout Data (기존 로직 유지)
     func loadLatestWorkoutDetailedData() {
         isLoadingDetailedData = true
         
@@ -106,6 +179,55 @@ class WorkoutDataService: ObservableObject {
                 self?.postRouteData(jsonData: jsonData)
             }
         }
+    }
+    
+    private func postWorkoutData(_ workoutData: WorkoutDetailedData, completion: @escaping (Bool, String?) -> Void) {
+        // 워크아웃 데이터를 서버 형식으로 변환
+        let payload: [String: Any] = [
+            "workoutId": workoutData.workout.uuid.uuidString,
+            "startDate": ISO8601DateFormatter().string(from: workoutData.startDate),
+            "endDate": ISO8601DateFormatter().string(from: workoutData.endDate),
+            "duration": workoutData.duration,
+            "totalDistance": workoutData.totalDistance,
+            "totalEnergyBurned": workoutData.totalEnergyBurned,
+            "averageHeartRate": workoutData.averageHeartRate,
+            "maxHeartRate": workoutData.maxHeartRate,
+            "minHeartRate": workoutData.minHeartRate,
+            "totalSteps": workoutData.totalSteps,
+            "averageSpeed": workoutData.averageSpeed,
+            "averagePace": workoutData.averagePace,
+            "routePoints": workoutData.routePoints.map { point in
+                [
+                    "latitude": point.latitude,
+                    "longitude": point.longitude,
+                    "timestamp": ISO8601DateFormatter().string(from: point.timestamp),
+                    "cumulativeDistance": point.cumulativeDistance
+                ]
+            }
+        ]
+        
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else {
+            completion(false, "JSON 변환 실패")
+            return
+        }
+        
+        var request = URLRequest(url: URL(string: "http://127.0.0.1/syncworkout")!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = jsonData
+        
+        let task = URLSession.shared.dataTask(with: request) { data, response, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    completion(false, error.localizedDescription)
+                } else if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
+                    completion(false, "서버 응답 \(httpResponse.statusCode)")
+                } else {
+                    completion(true, nil)
+                }
+            }
+        }
+        task.resume()
     }
     
     private func postRouteData(jsonData: Data) {
