@@ -148,27 +148,10 @@ class WorkoutDataService: ObservableObject {
                 return
             }
             
-            // 2. 경로 데이터 가져오기
-            self?.healthKitManager.fetchRouteLocations(for: workout) { points in
-                guard !points.isEmpty else {
-                    DispatchQueue.main.async { self?.syncStatus = "경로 데이터가 없습니다." }
-                    return
-                }
-                
-                // 3. JSON 변환
-                let routeArray = points.map { point in
-                    [
-                        "latitude": point.latitude,
-                        "longitude": point.longitude,
-                        "timestamp": ISO8601DateFormatter().string(from: point.timestamp),
-                        "cumulativeDistance": point.cumulativeDistance
-                    ]
-                }
-                
-                let payload: [String: Any] = [
-                    "workoutId": workout.uuid.uuidString,
-                    "route": routeArray
-                ]
+            // 2. 전체 워크아웃 데이터 가져오기
+            self?.healthKitManager.fetchCompleteWorkoutData(for: workout) { detailedData in
+                // 3. JSON 변환 - 지정된 형식으로
+                let payload = self?.createWorkoutPayload(from: detailedData) ?? [:]
                 
                 guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else {
                     DispatchQueue.main.async { self?.syncStatus = "JSON 변환 실패" }
@@ -181,9 +164,9 @@ class WorkoutDataService: ObservableObject {
         }
     }
     
-    private func postWorkoutData(_ workoutData: WorkoutDetailedData, completion: @escaping (Bool, String?) -> Void) {
-        // 워크아웃 데이터를 서버 형식으로 변환
-        let payload: [String: Any] = [
+    // MARK: - Helper Methods
+    private func createWorkoutPayload(from workoutData: WorkoutDetailedData) -> [String: Any] {
+        return [
             "workoutId": workoutData.workout.uuid.uuidString,
             "startTime": ISO8601DateFormatter().string(from: workoutData.startDate),
             "endTime": ISO8601DateFormatter().string(from: workoutData.endDate),
@@ -200,6 +183,11 @@ class WorkoutDataService: ObservableObject {
                 ]
             }
         ]
+    }
+    
+    private func postWorkoutData(_ workoutData: WorkoutDetailedData, completion: @escaping (Bool, String?) -> Void) {
+        // 워크아웃 데이터를 서버 형식으로 변환
+        let payload = createWorkoutPayload(from: workoutData)
         
         guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else {
             completion(false, "JSON 변환 실패")
