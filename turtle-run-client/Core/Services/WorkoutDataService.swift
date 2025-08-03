@@ -185,23 +185,18 @@ class WorkoutDataService: ObservableObject {
         // 워크아웃 데이터를 서버 형식으로 변환
         let payload: [String: Any] = [
             "workoutId": workoutData.workout.uuid.uuidString,
-            "startDate": ISO8601DateFormatter().string(from: workoutData.startDate),
-            "endDate": ISO8601DateFormatter().string(from: workoutData.endDate),
-            "duration": workoutData.duration,
-            "totalDistance": workoutData.totalDistance,
-            "totalEnergyBurned": workoutData.totalEnergyBurned,
-            "averageHeartRate": workoutData.averageHeartRate,
-            "maxHeartRate": workoutData.maxHeartRate,
-            "minHeartRate": workoutData.minHeartRate,
-            "totalSteps": workoutData.totalSteps,
-            "averageSpeed": workoutData.averageSpeed,
-            "averagePace": workoutData.averagePace,
-            "routePoints": workoutData.routePoints.map { point in
+            "startTime": ISO8601DateFormatter().string(from: workoutData.startDate),
+            "endTime": ISO8601DateFormatter().string(from: workoutData.endDate),
+            "workoutType": "running",
+            "distance": workoutData.totalDistance,
+            "duration": Int(workoutData.duration),
+            "calories": Int(workoutData.totalEnergyBurned),
+            "avgHeartRate": Int(workoutData.averageHeartRate),
+            "route": workoutData.routePoints.map { point in
                 [
                     "latitude": point.latitude,
                     "longitude": point.longitude,
-                    "timestamp": ISO8601DateFormatter().string(from: point.timestamp),
-                    "cumulativeDistance": point.cumulativeDistance
+                    "timestamp": ISO8601DateFormatter().string(from: point.timestamp)
                 ]
             }
         ]
