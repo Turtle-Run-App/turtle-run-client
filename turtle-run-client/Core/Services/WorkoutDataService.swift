@@ -66,6 +66,7 @@ class WorkoutDataService: ObservableObject {
     }
     
     private func syncAllWorkoutData(workouts: [HKWorkout]) {
+        // TODO: Bulk Sync API 구현 후 수정 예정
         let group = DispatchGroup()
         var allWorkoutData: [WorkoutDetailedData] = []
         var syncErrors: [String] = []
