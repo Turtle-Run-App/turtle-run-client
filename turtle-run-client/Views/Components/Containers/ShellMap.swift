@@ -28,7 +28,6 @@ struct ShellMap: View {
                     hasReceivedInitialLocation = true
                     shouldCenterOnUser = true
                     generateInitialShells() // 새로운 위치 기준으로 Shell 재생성
-                    print("🎯 처음 위치 수신 - 사용자 위치로 이동 및 Shell 재생성")
                 }
             }
             
@@ -188,8 +187,6 @@ struct ShellMap: View {
         )
         
         shells = prunedShells
-        let occupiedShellCount = shells.filter { $0.isShell }.count
-        print("최종 Shell 개수: \(shells.count), 점유된 Shell 개수: \(occupiedShellCount)")
     }
     
     // 기존 Shell과 새로운 Shell 병합 (중복 제거, 점유 상태 보존)
