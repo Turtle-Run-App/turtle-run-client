@@ -26,10 +26,17 @@ struct ShellMapView: UIViewRepresentable {
         )
         mapView.setCameraZoomRange(cameraZoomRange, animated: false)
         
-        // 초기 지도 위치 설정 (1km 줌 레벨)
+        // 초기 지도 위치 설정 (사용자 위치 우선, 없으면 서울 시청)
+        let initialCenter: CLLocationCoordinate2D
+        if let userLocation = locationManager.currentLocation {
+            initialCenter = userLocation.coordinate
+        } else {
+            initialCenter = CLLocationCoordinate2D(latitude: 37.5665, longitude: 126.9780)
+        }
+        
         let initialRegion = MKCoordinateRegion(
-            center: CLLocationCoordinate2D(latitude: 37.5665, longitude: 126.9780),
-            span: MKCoordinateSpan(latitudeDelta: 0.009, longitudeDelta: 0.009)
+            center: initialCenter,
+            span: MKCoordinateSpan(latitudeDelta: 0.009, longitudeDelta: 0.009) // 약 1km 줌 레벨
         )
         mapView.setRegion(initialRegion, animated: false)
         

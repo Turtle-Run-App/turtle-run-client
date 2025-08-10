@@ -8,13 +8,16 @@ class LocationManager: NSObject, ObservableObject {
     private let locationManager = CLLocationManager()
     
     @Published var currentLocation: CLLocation?
-    @Published var authorizationStatus: CLAuthorizationStatus = .notDetermined
+    @Published var authorizationStatus: CLAuthorizationStatus
     @Published var region = MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: 37.5665, longitude: 126.9780), // 서울 기본 위치
         span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
     )
     
     override init() {
+        // 현재 시스템의 실제 권한 상태로 초기화 (super.init() 전에)
+        self.authorizationStatus = locationManager.authorizationStatus
+     
         super.init()
         locationManager.delegate = self
         locationManager.desiredAccuracy = kCLLocationAccuracyBest

@@ -7,9 +7,10 @@ struct ShellMap: View {
     @State private var showingLocationAlert = false
     @State private var lastRegion: MKCoordinateRegion?
     @State private var shouldCenterOnUser = false
+    @State private var hasReceivedInitialLocation = false
     
     var body: some View {
-        ZStack {
+            ZStack {
             // 실제 지도와 Shell Grid
             ShellMapView(
                 locationManager: locationManager,
@@ -20,6 +21,15 @@ struct ShellMap: View {
             .onAppear {
                 requestLocationPermissionIfNeeded()
                 generateInitialShells()
+            }
+            .onReceive(locationManager.$currentLocation) { newLocation in
+                // 처음으로 위치를 받았을 때 해당 위치로 이동하고 Shell 재생성
+                if let _ = newLocation, !hasReceivedInitialLocation {
+                    hasReceivedInitialLocation = true
+                    shouldCenterOnUser = true
+                    generateInitialShells() // 새로운 위치 기준으로 Shell 재생성
+                    print("🎯 처음 위치 수신 - 사용자 위치로 이동 및 Shell 재생성")
+                }
             }
             
             // 위치 권한이 없을 때 표시할 오버레이
@@ -113,9 +123,19 @@ struct ShellMap: View {
     }
     
     private func generateInitialShells() {
-        // 초기 지역 설정 (서울 중심으로) - 기본 1km 줌 레벨
+        // 사용자 위치가 사용 가능하면 해당 위치를, 없으면 서울 시청을 기본으로 설정
+        let initialCenter: CLLocationCoordinate2D
+        
+        if let userLocation = locationManager.currentLocation {
+            initialCenter = userLocation.coordinate
+        } else {
+            // 위치 권한이 없거나 위치를 아직 받지 못한 경우 서울 시청을 기본값으로 사용
+            initialCenter = CLLocationCoordinate2D(latitude: 37.5665, longitude: 126.9780)
+            print("⚠️ 기본 위치 사용 (서울 시청): \(initialCenter.latitude), \(initialCenter.longitude)")
+        }
+        
         let initialRegion = MKCoordinateRegion(
-            center: CLLocationCoordinate2D(latitude: 37.5665, longitude: 126.9780),
+            center: initialCenter,
             span: MKCoordinateSpan(latitudeDelta: 0.009, longitudeDelta: 0.009) // 약 1km 줌 레벨
         )
         
