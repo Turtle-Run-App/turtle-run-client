@@ -24,9 +24,6 @@ struct PersonalShellStatusScreen: View {
                         // 통계 그리드
                         StatsCardsGrid()
                         
-                        // Shell 시각화
-                        ShellVisualizationCard()
-                        
                         // Shell 목록
                         ShellList()
                         
