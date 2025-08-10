@@ -3,6 +3,36 @@ import CoreLocation
 import SwiftUI
 import MapKit
 
+// MARK: - Shell Density Level
+enum ShellDensity: Int, CaseIterable {
+    case level1 = 1
+    case level2 = 2
+    case level3 = 3
+    case level4 = 4
+    case level5 = 5
+    
+    var description: String {
+        switch self {
+        case .level1: return "매우 낮음"
+        case .level2: return "낮음"
+        case .level3: return "보통"
+        case .level4: return "높음"
+        case .level5: return "매우 높음"
+        }
+    }
+    
+    // Density 레벨에 따른 알파값 (투명도)
+    var alphaValue: Double {
+        switch self {
+        case .level1: return 0.3
+        case .level2: return 0.5
+        case .level3: return 0.7
+        case .level4: return 0.85
+        case .level5: return 1.0
+        }
+    }
+}
+
 // MARK: - Shell Grid Cell Model
 struct ShellGridCell: Identifiable, Equatable {
     let id = UUID()
@@ -10,7 +40,7 @@ struct ShellGridCell: Identifiable, Equatable {
     let q: Int // 육각형 그리드의 q 좌표
     let r: Int // 육각형 그리드의 r 좌표
     var occupiedBy: TribeType? // Shell로 점유된 경우
-    var occupiedAt: Date?
+    var density: ShellDensity? // Shell의 점유 밀도 (1-5단계)
     
     // 20m 단위 정육각형 Grid Cell의 꼭짓점들 계산
     var hexagonVertices: [CLLocationCoordinate2D] {
@@ -23,7 +53,7 @@ struct ShellGridCell: Identifiable, Equatable {
         self.r = r
         self.coordinate = HexagonGridUtil.hexToAbsoluteCoordinate(q: q, r: r)
         self.occupiedBy = nil
-        self.occupiedAt = nil
+        self.density = nil
     }
     
     // 이 Grid Cell이 Shell인지 확인 (종족에 의해 점유된 상태)
@@ -58,6 +88,11 @@ enum TribeType: String, CaseIterable {
         case .blueTurtle:
             return .turtleRunTheme.blueTurtle
         }
+    }
+    
+    // Density에 따른 색상 강도 조절
+    func colorWithDensity(_ density: ShellDensity) -> Color {
+        return color.opacity(density.alphaValue)
     }
     
     var displayName: String {

@@ -77,10 +77,12 @@ struct ShellMapView: UIViewRepresentable {
                 let renderer = MKPolygonRenderer(polygon: gridPolygon.polygon)
                 
                 // Grid Cell의 점유 상태에 따라 렌더링 설정
-                if let tribe = gridPolygon.gridCell.occupiedBy {
-                    // Shell인 경우 (점유된 Grid Cell)
-                    renderer.fillColor = UIColor(tribe.color.opacity(0.7))
-                    renderer.strokeColor = UIColor(tribe.color)
+                if let tribe = gridPolygon.gridCell.occupiedBy,
+                   let density = gridPolygon.gridCell.density {
+                    // Shell인 경우 (점유된 Grid Cell) - Density에 따른 색상 강도 적용
+                    let densityColor = tribe.colorWithDensity(density)
+                    renderer.fillColor = UIColor(densityColor)
+                    renderer.strokeColor = UIColor(tribe.color) // 테두리는 기본 색상
                     renderer.lineWidth = 2.5
                 } else {
                     // 일반 Grid Cell인 경우 - 테두리만 표시

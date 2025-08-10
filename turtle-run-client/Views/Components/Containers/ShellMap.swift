@@ -3,7 +3,7 @@ import MapKit
 
 struct ShellMap: View {
     @StateObject private var locationManager = LocationManager.shared
-    @State private var gridCells: [ShellGridCell] = []
+    @State private var shells: [ShellGridCell] = []
     @State private var showingLocationAlert = false
     @State private var lastRegion: MKCoordinateRegion?
     @State private var shouldCenterOnUser = false
@@ -13,13 +13,13 @@ struct ShellMap: View {
             // 실제 지도와 Shell Grid
             ShellMapView(
                 locationManager: locationManager,
-                gridCells: $gridCells,
+                gridCells: $shells,
                 onRegionChanged: handleRegionChange,
                 shouldCenterOnUser: $shouldCenterOnUser
             )
             .onAppear {
                 requestLocationPermissionIfNeeded()
-                generateInitialGridCells()
+                generateInitialShells()
             }
             
             // 위치 권한이 없을 때 표시할 오버레이
@@ -112,15 +112,15 @@ struct ShellMap: View {
         }
     }
     
-    private func generateInitialGridCells() {
+    private func generateInitialShells() {
         // 초기 지역 설정 (서울 중심으로) - 기본 1km 줌 레벨
         let initialRegion = MKCoordinateRegion(
             center: CLLocationCoordinate2D(latitude: 37.5665, longitude: 126.9780),
             span: MKCoordinateSpan(latitudeDelta: 0.009, longitudeDelta: 0.009) // 약 1km 줌 레벨
         )
         
-        // 초기 Grid Cell 생성 (1.5배 확장 영역)
-        generateGridCellsForRegion(initialRegion)
+        // 초기 Shell 생성 (1.5배 확장 영역)
+        generateShellsForRegion(initialRegion)
         lastRegion = initialRegion
     }
     
@@ -134,7 +134,7 @@ struct ShellMap: View {
         shouldCenterOnUser = true
     }
     
-    // MARK: - Grid Cell Generation Methods
+    // MARK: - Shell Generation Methods
     private func handleRegionChange(_ newRegion: MKCoordinateRegion) {
         // 이전 지역과 비교하여 재생성이 필요한지 확인
         if let lastRegion = lastRegion,
@@ -142,88 +142,295 @@ struct ShellMap: View {
             return // 재생성 불필요
         }
         
-        generateGridCellsForRegion(newRegion)
+        generateShellsForRegion(newRegion)
         lastRegion = newRegion
     }
     
-    private func generateGridCellsForRegion(_ region: MKCoordinateRegion) {
-        // 지도 가시 영역의 1.5배 범위로 Grid Cell 생성
-        var newGridCells = HexagonGridUtil.generateGridCellsForMapRegion(region: region, expansionFactor: 1.5)
+    private func generateShellsForRegion(_ region: MKCoordinateRegion) {
+        // 지도 가시 영역의 1.5배 범위로 Shell 생성
+        var newShells = HexagonGridUtil.generateGridCellsForMapRegion(region: region, expansionFactor: 1.5)
         
-        // 기존 Grid Cell과 병합 (중복 제거)
-        let existingCells = gridCells
-        var mergedCells = mergeGridCells(existing: existingCells, new: newGridCells)
+        // 기존 Shell과 병합 (중복 제거)
+        let existingShells = shells
+        var mergedShells = mergeShells(existing: existingShells, new: newShells)
         
-        // 테스트용으로 몇 개 Grid Cell을 Shell로 설정 (처음 생성 시에만)
-        if gridCells.isEmpty && mergedCells.count > 10 {
-            mergedCells = addTestShells(to: mergedCells)
+        // 테스트용 Shell 생성 (최초 생성 시에만, 고정된 패턴)
+        if shells.isEmpty {
+            mergedShells = addTestShells(to: mergedShells, region: region)
         }
         
-        // 거리 기반으로 Grid Cell 정리 (가장 먼 Grid부터 제거)
-        let prunedCells = HexagonGridUtil.pruneDistantGridCells(
-            gridCells: mergedCells,
+        // 거리 기반으로 Shell 정리 (가장 먼 Shell부터 제거)
+        let prunedShells = HexagonGridUtil.pruneDistantGridCells(
+            gridCells: mergedShells,
             mapCenter: region.center,
-            maxCount: 800, // 최대 800개 Grid Cell
-            prioritizeShells: true // Shell 우선 보존
+            maxCount: 800, // 최대 800개 Shell
+            prioritizeShells: true // 점유된 Shell 우선 보존
         )
         
-        gridCells = prunedCells
-        let shellCount = gridCells.filter { $0.isShell }.count
-        print("최종 Grid Cell 개수: \(gridCells.count), Shell 개수: \(shellCount)")
+        shells = prunedShells
+        let occupiedShellCount = shells.filter { $0.isShell }.count
+        print("최종 Shell 개수: \(shells.count), 점유된 Shell 개수: \(occupiedShellCount)")
     }
     
-    // 기존 Grid Cell과 새로운 Grid Cell 병합 (중복 제거)
-    private func mergeGridCells(existing: [ShellGridCell], new: [ShellGridCell]) -> [ShellGridCell] {
+    // 기존 Shell과 새로운 Shell 병합 (중복 제거, 점유 상태 보존)
+    private func mergeShells(existing: [ShellGridCell], new: [ShellGridCell]) -> [ShellGridCell] {
         var existingDict: [String: ShellGridCell] = [:]
         
-        // 기존 Grid Cell을 딕셔너리로 변환 (q,r 좌표를 키로 사용)
-        for cell in existing {
-            let key = "\(cell.q),\(cell.r)"
-            existingDict[key] = cell
+        // 기존 Shell을 딕셔너리로 변환 (q,r 좌표를 키로 사용)
+        for shell in existing {
+            let key = "\(shell.q),\(shell.r)"
+            existingDict[key] = shell
         }
         
-        // 새로운 Grid Cell 추가 (중복되지 않는 것만)
-        for cell in new {
-            let key = "\(cell.q),\(cell.r)"
+        // 새로운 Shell 추가 (중복되지 않는 것만, 기존 점유 상태 보존)
+        for shell in new {
+            let key = "\(shell.q),\(shell.r)"
             if existingDict[key] == nil {
-                existingDict[key] = cell
+                existingDict[key] = shell
             }
         }
         
         return Array(existingDict.values)
     }
     
-    // 테스트용 Shell 추가
-    private func addTestShells(to gridCells: [ShellGridCell]) -> [ShellGridCell] {
-        var mutableCells = gridCells
+    // 러닝 코스처럼 이어진 테스트 Shell 생성 (절대 좌표 기준, 고정된 패턴)
+    private func addTestShells(to shells: [ShellGridCell], region: MKCoordinateRegion) -> [ShellGridCell] {
+        var shellDict: [String: ShellGridCell] = [:]
         
-        if mutableCells.indices.contains(5) {
-            mutableCells[5].occupiedBy = .redTurtle
-            mutableCells[5].occupiedAt = Date()
+        // 기존 Shell들을 딕셔너리로 변환
+        for shell in shells {
+            let key = "\(shell.q),\(shell.r)"
+            shellDict[key] = shell
         }
         
-        if mutableCells.indices.contains(8) {
-            mutableCells[8].occupiedBy = .blueTurtle
-            mutableCells[8].occupiedAt = Date().addingTimeInterval(-3600)
-        }
+        // 절대 좌표계 기준으로 고정된 러닝 코스 패턴 생성
+        let runningRoutes = generateRunningRoutePatterns()
         
-        if mutableCells.indices.contains(12) {
-            mutableCells[12].occupiedBy = .yellowTurtle
-            mutableCells[12].occupiedAt = Date().addingTimeInterval(-7200)
-        }
-        
-        // 추가 테스트 Shell들 (점유된 Grid Cell들)
-        let testCellIndices = [15, 20, 25, 30, 35, 40, 45]
-        let testTribes: [TribeType] = [.redTurtle, .blueTurtle, .yellowTurtle]
-        
-        for (index, cellIndex) in testCellIndices.enumerated() {
-            if mutableCells.indices.contains(cellIndex) {
-                mutableCells[cellIndex].occupiedBy = testTribes[index % testTribes.count]
-                mutableCells[cellIndex].occupiedAt = Date().addingTimeInterval(-Double(index * 1800)) // 30분씩 차이
+        for route in runningRoutes {
+            for (index, hexCoord) in route.path.enumerated() {
+                let key = "\(hexCoord.q),\(hexCoord.r)"
+                
+                // 해당 좌표의 Shell이 존재하는 경우에만 점유 설정
+                if var shell = shellDict[key] {
+                    shell.occupiedBy = route.tribe
+                    shell.density = generateRealisticDensity(routeIndex: index, totalLength: route.path.count)
+                    shellDict[key] = shell
+                }
             }
         }
         
-        return mutableCells
+        return Array(shellDict.values)
+    }
+    
+    // 러닝 코스 패턴 생성 (자연스럽고 밀집된 형태)
+    private func generateRunningRoutePatterns() -> [RunningRoute] {
+        var routes: [RunningRoute] = []
+        
+        // 붉은귀거북 - 한강 공원 러닝 코스 (곡선형 자연스러운 경로)
+        let redMainRoute = RunningRoute(
+            tribe: .redTurtle,
+            path: generateNaturalPath(
+                start: (2, 3),
+                waypoints: [(8, 5), (15, 2), (22, 6), (25, 12), (20, 18), (12, 20), (5, 16)],
+                densify: true
+            )
+        )
+        routes.append(redMainRoute)
+        
+        // 붉은귀거북 - 추가 지선 코스들 (메인 코스와 연결)
+        let redBranches = [
+            RunningRoute(tribe: .redTurtle, path: generateNaturalPath(
+                start: (15, 2), waypoints: [(18, -3), (22, -8), (25, -12)], densify: true
+            )),
+            RunningRoute(tribe: .redTurtle, path: generateNaturalPath(
+                start: (12, 20), waypoints: [(8, 25), (3, 28), (-2, 30)], densify: true
+            ))
+        ]
+        routes.append(contentsOf: redBranches)
+        
+        // 사막거북 - 남산 둘레길 러닝 코스 (원형 + 지선)
+        let yellowMainRoute = RunningRoute(
+            tribe: .yellowTurtle,
+            path: generateNaturalPath(
+                start: (-3, -2),
+                waypoints: [(-8, -5), (-15, -8), (-22, -6), (-25, -2), (-22, 4), (-15, 8), (-8, 6), (-3, 2)],
+                densify: true
+            )
+        )
+        routes.append(yellowMainRoute)
+        
+        // 사막거북 - 지선 코스들
+        let yellowBranches = [
+            RunningRoute(tribe: .yellowTurtle, path: generateNaturalPath(
+                start: (-15, -8), waypoints: [(-18, -15), (-20, -22), (-18, -28)], densify: true
+            )),
+            RunningRoute(tribe: .yellowTurtle, path: generateNaturalPath(
+                start: (-8, 6), waypoints: [(-12, 12), (-18, 18), (-25, 22)], densify: true
+            ))
+        ]
+        routes.append(contentsOf: yellowBranches)
+        
+        // 그리스거북 - 올림픽 공원 러닝 코스 (복잡한 네트워크)
+        let blueMainRoute = RunningRoute(
+            tribe: .blueTurtle,
+            path: generateNaturalPath(
+                start: (5, -8),
+                waypoints: [(12, -12), (20, -15), (28, -12), (32, -5), (28, 2), (20, 5), (12, 2), (8, -3)],
+                densify: true
+            )
+        )
+        routes.append(blueMainRoute)
+        
+        // 그리스거북 - 교차 코스들
+        let blueBranches = [
+            RunningRoute(tribe: .blueTurtle, path: generateNaturalPath(
+                start: (20, -15), waypoints: [(25, -25), (30, -35), (32, -42)], densify: true
+            )),
+            RunningRoute(tribe: .blueTurtle, path: generateNaturalPath(
+                start: (28, 2), waypoints: [(35, 8), (42, 12), (48, 15)], densify: true
+            )),
+            RunningRoute(tribe: .blueTurtle, path: generateNaturalPath(
+                start: (12, 2), waypoints: [(8, 8), (5, 15), (8, 22), (15, 25)], densify: true
+            ))
+        ]
+        routes.append(contentsOf: blueBranches)
+        
+        return routes
+    }
+    
+    // 자연스러운 경로 생성 (waypoint 기반, 밀집되고 곡선적)
+    private func generateNaturalPath(
+        start: (q: Int, r: Int), 
+        waypoints: [(q: Int, r: Int)], 
+        densify: Bool = true
+    ) -> [HexCoordinate] {
+        var path: [HexCoordinate] = []
+        var currentPoint = start
+        
+        // 시작점 추가
+        path.append(HexCoordinate(q: currentPoint.q, r: currentPoint.r))
+        
+        // 각 waypoint까지의 경로 생성
+        for waypoint in waypoints {
+            let segmentPath = generateHexPathBetween(
+                from: currentPoint, 
+                to: waypoint, 
+                densify: densify
+            )
+            
+            // 첫 번째 점은 중복이므로 제외
+            path.append(contentsOf: segmentPath.dropFirst())
+            currentPoint = waypoint
+        }
+        
+        return path
+    }
+    
+    // 두 점 사이의 육각형 그리드 경로 생성 (밀집되고 자연스러운)
+    private func generateHexPathBetween(
+        from start: (q: Int, r: Int), 
+        to end: (q: Int, r: Int), 
+        densify: Bool = true
+    ) -> [HexCoordinate] {
+        var path: [HexCoordinate] = []
+        
+        let deltaQ = end.q - start.q
+        let deltaR = end.r - start.r
+        let distance = max(abs(deltaQ), abs(deltaR), abs(deltaQ + deltaR))
+        
+        if distance == 0 {
+            return [HexCoordinate(q: start.q, r: start.r)]
+        }
+        
+        // 기본 경로 생성 (육각형 그리드의 직선 경로)
+        for i in 0...distance {
+            let t = Double(i) / Double(distance)
+            let q = start.q + Int(round(Double(deltaQ) * t))
+            let r = start.r + Int(round(Double(deltaR) * t))
+            path.append(HexCoordinate(q: q, r: r))
+        }
+        
+        // 밀집화: 경로 주변에 추가 Shell 생성
+        if densify {
+            var densifiedPath = path
+            let hexDirections = [(1, 0), (1, -1), (0, -1), (-1, 0), (-1, 1), (0, 1)]
+            
+            for coordinate in path {
+                // 50% 확률로 인접한 Shell 추가 (무작위성 추가)
+                if Int.random(in: 0...100) < 50 {
+                    let randomDirection = hexDirections.randomElement()!
+                    let adjacentQ = coordinate.q + randomDirection.0
+                    let adjacentR = coordinate.r + randomDirection.1
+                    densifiedPath.append(HexCoordinate(q: adjacentQ, r: adjacentR))
+                }
+                
+                // 30% 확률로 대각선 방향 Shell 추가
+                if Int.random(in: 0...100) < 30 {
+                    let diagonalDirection = hexDirections.randomElement()!
+                    let diagonalQ = coordinate.q + diagonalDirection.0 * 2
+                    let diagonalR = coordinate.r + diagonalDirection.1 * 2
+                    densifiedPath.append(HexCoordinate(q: diagonalQ, r: diagonalR))
+                }
+            }
+            
+            return densifiedPath
+        }
+        
+        return path
+    }
+    
+    // 육각형 그리드의 6방향 (인접한 셀들)
+    private let hexDirections = [
+        (1, 0),   // 동쪽
+        (1, -1),  // 북동쪽
+        (0, -1),  // 북서쪽
+        (-1, 0),  // 서쪽
+        (-1, 1),  // 남서쪽
+        (0, 1)    // 남동쪽
+    ]
+    
+    // 현실적인 Density 생성 (러닝 코스의 특성을 반영)
+    private func generateRealisticDensity(routeIndex: Int, totalLength: Int) -> ShellDensity {
+        let routeProgress = Double(routeIndex) / Double(totalLength)
+        
+        // 러닝 코스의 시작/끝 지점은 높은 density (집합 지점)
+        if routeProgress < 0.1 || routeProgress > 0.9 {
+            return weightedRandomDensity(weights: [0.1, 0.1, 0.2, 0.3, 0.3]) // 높은 density 선호
+        }
+        // 중간 지점은 다양한 density
+        else if routeProgress > 0.3 && routeProgress < 0.7 {
+            return weightedRandomDensity(weights: [0.15, 0.25, 0.35, 0.20, 0.05]) // 중간 density 선호
+        }
+        // 전환 구간은 낮은 density
+        else {
+            return weightedRandomDensity(weights: [0.3, 0.3, 0.25, 0.10, 0.05]) // 낮은 density 선호
+        }
+    }
+    
+    // 가중치 기반 랜덤 Density 선택
+    private func weightedRandomDensity(weights: [Double]) -> ShellDensity {
+        let random = Double.random(in: 0...1)
+        var cumulativeWeight = 0.0
+        
+        for (index, weight) in weights.enumerated() {
+            cumulativeWeight += weight
+            if random <= cumulativeWeight {
+                return ShellDensity.allCases[index]
+            }
+        }
+        
+        return .level3 // 기본값
+    }
+    
+    // 러닝 코스 데이터 구조
+    private struct RunningRoute {
+        let tribe: TribeType
+        let path: [HexCoordinate]
+    }
+    
+    private struct HexCoordinate {
+        let q: Int
+        let r: Int
     }
     
     private func openAppSettings() {
