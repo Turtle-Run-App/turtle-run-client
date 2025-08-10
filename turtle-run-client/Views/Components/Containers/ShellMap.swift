@@ -275,24 +275,47 @@ struct ShellMap: View {
 
 // MARK: - Preview용 LocationManager
 class PreviewLocationManager: LocationManager {
+    private let seoulCityHall = CLLocation(latitude: 37.5665, longitude: 126.9780)
+    
     override init() {
-        // Preview에서는 항상 서울 시청 위치로 고정 (super.init() 전에 설정)
         super.init()
         
-        // 즉시 설정 (DispatchQueue 없이)
-        self.currentLocation = CLLocation(latitude: 37.5665, longitude: 126.9780)
+        // 즉시 서울 시청 위치로 설정
+        self.currentLocation = seoulCityHall
         self.authorizationStatus = .authorizedWhenInUse
         self.region = MKCoordinateRegion(
-            center: CLLocationCoordinate2D(latitude: 37.5665, longitude: 126.9780),
+            center: seoulCityHall.coordinate,
             span: MKCoordinateSpan(latitudeDelta: 0.009, longitudeDelta: 0.009)
         )
         
-        print("🎭 PreviewLocationManager 초기화됨 - 서울 시청: \(self.currentLocation?.coordinate.latitude ?? 0), \(self.currentLocation?.coordinate.longitude ?? 0)")
+        print("🎭 PreviewLocationManager 초기화됨 - 서울 시청: \(seoulCityHall.coordinate.latitude), \(seoulCityHall.coordinate.longitude)")
     }
     
-    // Preview에서는 실제 위치 서비스 시작하지 않음
+    // Preview에서는 실제 위치 서비스 시작하지 않고 항상 서울 시청 반환
     override func requestLocationPermission() {
         print("🎭 Preview에서 위치 권한 요청 - 이미 허용됨")
+        
+        // 권한 허용된 것처럼 처리하고 서울 시청 위치 제공
+        DispatchQueue.main.async {
+            self.currentLocation = self.seoulCityHall
+            self.authorizationStatus = .authorizedWhenInUse
+        }
+    }
+    
+    // 현재 위치 속성이 요청될 때마다 항상 서울 시청 반환 보장
+    override var currentLocation: CLLocation? {
+        get {
+            return seoulCityHall
+        }
+        set {
+            // Preview에서는 위치 변경을 무시하고 항상 서울 시청 유지
+            super.currentLocation = seoulCityHall
+        }
+    }
+    
+    // 위치 업데이트 중단 (Preview에서는 아무것도 하지 않음)
+    override func stopLocationUpdates() {
+        print("🎭 Preview에서 위치 업데이트 중단")
     }
 }
 
