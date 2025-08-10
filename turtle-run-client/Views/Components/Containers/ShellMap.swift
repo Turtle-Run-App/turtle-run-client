@@ -2,7 +2,13 @@ import SwiftUI
 import MapKit
 
 struct ShellMap: View {
-    @StateObject private var locationManager = LocationManager.shared
+    @StateObject private var locationManager: LocationManager = {
+        if ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1" {
+            return PreviewLocationManager()
+        } else {
+            return LocationManager.shared
+        }
+    }()
     @State private var shells: [ShellGridCell] = []
     @State private var showingLocationAlert = false
     @State private var lastRegion: MKCoordinateRegion?
@@ -130,7 +136,6 @@ struct ShellMap: View {
         } else {
             // 위치 권한이 없거나 위치를 아직 받지 못한 경우 서울 시청을 기본값으로 사용
             initialCenter = CLLocationCoordinate2D(latitude: 37.5665, longitude: 126.9780)
-            print("⚠️ 기본 위치 사용 (서울 시청): \(initialCenter.latitude), \(initialCenter.longitude)")
         }
         
         let initialRegion = MKCoordinateRegion(
@@ -173,8 +178,8 @@ struct ShellMap: View {
         let existingShells = shells
         var mergedShells = mergeShells(existing: existingShells, new: newShells)
         
-        // 테스트용 Shell 생성 (최초 생성 시에만, 고정된 패턴)
-        if shells.isEmpty {
+        // Preview 모드에서만 테스트 Shell 생성
+        if ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1" && shells.isEmpty {
             mergedShells = addTestShells(to: mergedShells, region: region)
         }
         
@@ -210,7 +215,15 @@ struct ShellMap: View {
         return Array(existingDict.values)
     }
     
-    // 러닝 코스처럼 이어진 테스트 Shell 생성 (절대 좌표 기준, 고정된 패턴)
+
+    
+    private func openAppSettings() {
+        if let settingsUrl = URL(string: UIApplication.openSettingsURLString) {
+            UIApplication.shared.open(settingsUrl)
+        }
+    }
+    
+    // MARK: - Preview용 테스트 Shell 생성 (Preview에서만 실행)
     private func addTestShells(to shells: [ShellGridCell], region: MKCoordinateRegion) -> [ShellGridCell] {
         var shellDict: [String: ShellGridCell] = [:]
         
@@ -220,240 +233,66 @@ struct ShellMap: View {
             shellDict[key] = shell
         }
         
-        // 절대 좌표계 기준으로 고정된 러닝 코스 패턴 생성
-        let runningRoutes = generateRunningRoutePatterns()
+        // 고정된 테스트 Shell 좌표들 (서울 시청 기준)
+        let testShellData: [(q: Int, r: Int, tribe: TribeType, density: ShellDensity)] = [
+            // 붉은귀거북 - 동쪽 러닝 코스
+            (2, 3, .redTurtle, .level5), (3, 3, .redTurtle, .level4), (4, 2, .redTurtle, .level3),
+            (5, 2, .redTurtle, .level4), (6, 1, .redTurtle, .level5), (7, 1, .redTurtle, .level3),
+            (8, 0, .redTurtle, .level2), (9, 0, .redTurtle, .level4), (10, -1, .redTurtle, .level3),
+            (11, -1, .redTurtle, .level5), (12, -2, .redTurtle, .level2), (13, -2, .redTurtle, .level4),
+            
+            // 사막거북 - 서쪽 러닝 코스
+            (-2, -3, .yellowTurtle, .level4), (-3, -2, .yellowTurtle, .level5), (-4, -2, .yellowTurtle, .level3),
+            (-5, -1, .yellowTurtle, .level4), (-6, -1, .yellowTurtle, .level2), (-7, 0, .yellowTurtle, .level5),
+            (-8, 0, .yellowTurtle, .level3), (-9, 1, .yellowTurtle, .level4), (-10, 1, .yellowTurtle, .level2),
+            (-11, 2, .yellowTurtle, .level5), (-12, 2, .yellowTurtle, .level3), (-13, 3, .yellowTurtle, .level4),
+            
+            // 그리스거북 - 남쪽 러닝 코스
+            (1, -5, .blueTurtle, .level3), (0, -4, .blueTurtle, .level5), (-1, -4, .blueTurtle, .level2),
+            (-2, -3, .blueTurtle, .level4), (-3, -3, .blueTurtle, .level3), (-4, -2, .blueTurtle, .level5),
+            (-5, -2, .blueTurtle, .level2), (-6, -1, .blueTurtle, .level4), (-7, -1, .blueTurtle, .level3),
+            (-8, 0, .blueTurtle, .level5), (-9, 0, .blueTurtle, .level2), (-10, 1, .blueTurtle, .level4),
+            
+            // 추가 산발적 Shell들
+            (15, 5, .redTurtle, .level1), (-15, -5, .yellowTurtle, .level1), (5, -15, .blueTurtle, .level1),
+            (8, 8, .redTurtle, .level2), (-8, 8, .yellowTurtle, .level2), (0, -8, .blueTurtle, .level2),
+            (12, -8, .redTurtle, .level3), (-12, 8, .yellowTurtle, .level3), (3, 12, .blueTurtle, .level3)
+        ]
         
-        for route in runningRoutes {
-            for (index, hexCoord) in route.path.enumerated() {
-                let key = "\(hexCoord.q),\(hexCoord.r)"
-                
-                // 해당 좌표의 Shell이 존재하는 경우에만 점유 설정
-                if var shell = shellDict[key] {
-                    shell.occupiedBy = route.tribe
-                    shell.density = generateRealisticDensity(routeIndex: index, totalLength: route.path.count)
-                    shellDict[key] = shell
-                }
+        // 테스트 Shell 적용
+        for (q, r, tribe, density) in testShellData {
+            let key = "\(q),\(r)"
+            if var shell = shellDict[key] {
+                shell.occupiedBy = tribe
+                shell.density = density
+                shellDict[key] = shell
             }
         }
         
         return Array(shellDict.values)
     }
-    
-    // 러닝 코스 패턴 생성 (자연스럽고 밀집된 형태)
-    private func generateRunningRoutePatterns() -> [RunningRoute] {
-        var routes: [RunningRoute] = []
+}
+
+// MARK: - Preview용 LocationManager
+class PreviewLocationManager: LocationManager {
+    override init() {
+        // Preview에서는 항상 서울 시청 위치로 고정 (super.init() 전에 설정)
+        super.init()
         
-        // 붉은귀거북 - 한강 공원 러닝 코스 (곡선형 자연스러운 경로)
-        let redMainRoute = RunningRoute(
-            tribe: .redTurtle,
-            path: generateNaturalPath(
-                start: (2, 3),
-                waypoints: [(8, 5), (15, 2), (22, 6), (25, 12), (20, 18), (12, 20), (5, 16)],
-                densify: true
-            )
+        // 즉시 설정 (DispatchQueue 없이)
+        self.currentLocation = CLLocation(latitude: 37.5665, longitude: 126.9780)
+        self.authorizationStatus = .authorizedWhenInUse
+        self.region = MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: 37.5665, longitude: 126.9780),
+            span: MKCoordinateSpan(latitudeDelta: 0.009, longitudeDelta: 0.009)
         )
-        routes.append(redMainRoute)
         
-        // 붉은귀거북 - 추가 지선 코스들 (메인 코스와 연결)
-        let redBranches = [
-            RunningRoute(tribe: .redTurtle, path: generateNaturalPath(
-                start: (15, 2), waypoints: [(18, -3), (22, -8), (25, -12)], densify: true
-            )),
-            RunningRoute(tribe: .redTurtle, path: generateNaturalPath(
-                start: (12, 20), waypoints: [(8, 25), (3, 28), (-2, 30)], densify: true
-            ))
-        ]
-        routes.append(contentsOf: redBranches)
-        
-        // 사막거북 - 남산 둘레길 러닝 코스 (원형 + 지선)
-        let yellowMainRoute = RunningRoute(
-            tribe: .yellowTurtle,
-            path: generateNaturalPath(
-                start: (-3, -2),
-                waypoints: [(-8, -5), (-15, -8), (-22, -6), (-25, -2), (-22, 4), (-15, 8), (-8, 6), (-3, 2)],
-                densify: true
-            )
-        )
-        routes.append(yellowMainRoute)
-        
-        // 사막거북 - 지선 코스들
-        let yellowBranches = [
-            RunningRoute(tribe: .yellowTurtle, path: generateNaturalPath(
-                start: (-15, -8), waypoints: [(-18, -15), (-20, -22), (-18, -28)], densify: true
-            )),
-            RunningRoute(tribe: .yellowTurtle, path: generateNaturalPath(
-                start: (-8, 6), waypoints: [(-12, 12), (-18, 18), (-25, 22)], densify: true
-            ))
-        ]
-        routes.append(contentsOf: yellowBranches)
-        
-        // 그리스거북 - 올림픽 공원 러닝 코스 (복잡한 네트워크)
-        let blueMainRoute = RunningRoute(
-            tribe: .blueTurtle,
-            path: generateNaturalPath(
-                start: (5, -8),
-                waypoints: [(12, -12), (20, -15), (28, -12), (32, -5), (28, 2), (20, 5), (12, 2), (8, -3)],
-                densify: true
-            )
-        )
-        routes.append(blueMainRoute)
-        
-        // 그리스거북 - 교차 코스들
-        let blueBranches = [
-            RunningRoute(tribe: .blueTurtle, path: generateNaturalPath(
-                start: (20, -15), waypoints: [(25, -25), (30, -35), (32, -42)], densify: true
-            )),
-            RunningRoute(tribe: .blueTurtle, path: generateNaturalPath(
-                start: (28, 2), waypoints: [(35, 8), (42, 12), (48, 15)], densify: true
-            )),
-            RunningRoute(tribe: .blueTurtle, path: generateNaturalPath(
-                start: (12, 2), waypoints: [(8, 8), (5, 15), (8, 22), (15, 25)], densify: true
-            ))
-        ]
-        routes.append(contentsOf: blueBranches)
-        
-        return routes
+        print("🎭 PreviewLocationManager 초기화됨 - 서울 시청: \(self.currentLocation?.coordinate.latitude ?? 0), \(self.currentLocation?.coordinate.longitude ?? 0)")
     }
     
-    // 자연스러운 경로 생성 (waypoint 기반, 밀집되고 곡선적)
-    private func generateNaturalPath(
-        start: (q: Int, r: Int), 
-        waypoints: [(q: Int, r: Int)], 
-        densify: Bool = true
-    ) -> [HexCoordinate] {
-        var path: [HexCoordinate] = []
-        var currentPoint = start
-        
-        // 시작점 추가
-        path.append(HexCoordinate(q: currentPoint.q, r: currentPoint.r))
-        
-        // 각 waypoint까지의 경로 생성
-        for waypoint in waypoints {
-            let segmentPath = generateHexPathBetween(
-                from: currentPoint, 
-                to: waypoint, 
-                densify: densify
-            )
-            
-            // 첫 번째 점은 중복이므로 제외
-            path.append(contentsOf: segmentPath.dropFirst())
-            currentPoint = waypoint
-        }
-        
-        return path
-    }
-    
-    // 두 점 사이의 육각형 그리드 경로 생성 (밀집되고 자연스러운)
-    private func generateHexPathBetween(
-        from start: (q: Int, r: Int), 
-        to end: (q: Int, r: Int), 
-        densify: Bool = true
-    ) -> [HexCoordinate] {
-        var path: [HexCoordinate] = []
-        
-        let deltaQ = end.q - start.q
-        let deltaR = end.r - start.r
-        let distance = max(abs(deltaQ), abs(deltaR), abs(deltaQ + deltaR))
-        
-        if distance == 0 {
-            return [HexCoordinate(q: start.q, r: start.r)]
-        }
-        
-        // 기본 경로 생성 (육각형 그리드의 직선 경로)
-        for i in 0...distance {
-            let t = Double(i) / Double(distance)
-            let q = start.q + Int(round(Double(deltaQ) * t))
-            let r = start.r + Int(round(Double(deltaR) * t))
-            path.append(HexCoordinate(q: q, r: r))
-        }
-        
-        // 밀집화: 경로 주변에 추가 Shell 생성
-        if densify {
-            var densifiedPath = path
-            let hexDirections = [(1, 0), (1, -1), (0, -1), (-1, 0), (-1, 1), (0, 1)]
-            
-            for coordinate in path {
-                // 50% 확률로 인접한 Shell 추가 (무작위성 추가)
-                if Int.random(in: 0...100) < 50 {
-                    let randomDirection = hexDirections.randomElement()!
-                    let adjacentQ = coordinate.q + randomDirection.0
-                    let adjacentR = coordinate.r + randomDirection.1
-                    densifiedPath.append(HexCoordinate(q: adjacentQ, r: adjacentR))
-                }
-                
-                // 30% 확률로 대각선 방향 Shell 추가
-                if Int.random(in: 0...100) < 30 {
-                    let diagonalDirection = hexDirections.randomElement()!
-                    let diagonalQ = coordinate.q + diagonalDirection.0 * 2
-                    let diagonalR = coordinate.r + diagonalDirection.1 * 2
-                    densifiedPath.append(HexCoordinate(q: diagonalQ, r: diagonalR))
-                }
-            }
-            
-            return densifiedPath
-        }
-        
-        return path
-    }
-    
-    // 육각형 그리드의 6방향 (인접한 셀들)
-    private let hexDirections = [
-        (1, 0),   // 동쪽
-        (1, -1),  // 북동쪽
-        (0, -1),  // 북서쪽
-        (-1, 0),  // 서쪽
-        (-1, 1),  // 남서쪽
-        (0, 1)    // 남동쪽
-    ]
-    
-    // 현실적인 Density 생성 (러닝 코스의 특성을 반영)
-    private func generateRealisticDensity(routeIndex: Int, totalLength: Int) -> ShellDensity {
-        let routeProgress = Double(routeIndex) / Double(totalLength)
-        
-        // 러닝 코스의 시작/끝 지점은 높은 density (집합 지점)
-        if routeProgress < 0.1 || routeProgress > 0.9 {
-            return weightedRandomDensity(weights: [0.1, 0.1, 0.2, 0.3, 0.3]) // 높은 density 선호
-        }
-        // 중간 지점은 다양한 density
-        else if routeProgress > 0.3 && routeProgress < 0.7 {
-            return weightedRandomDensity(weights: [0.15, 0.25, 0.35, 0.20, 0.05]) // 중간 density 선호
-        }
-        // 전환 구간은 낮은 density
-        else {
-            return weightedRandomDensity(weights: [0.3, 0.3, 0.25, 0.10, 0.05]) // 낮은 density 선호
-        }
-    }
-    
-    // 가중치 기반 랜덤 Density 선택
-    private func weightedRandomDensity(weights: [Double]) -> ShellDensity {
-        let random = Double.random(in: 0...1)
-        var cumulativeWeight = 0.0
-        
-        for (index, weight) in weights.enumerated() {
-            cumulativeWeight += weight
-            if random <= cumulativeWeight {
-                return ShellDensity.allCases[index]
-            }
-        }
-        
-        return .level3 // 기본값
-    }
-    
-    // 러닝 코스 데이터 구조
-    private struct RunningRoute {
-        let tribe: TribeType
-        let path: [HexCoordinate]
-    }
-    
-    private struct HexCoordinate {
-        let q: Int
-        let r: Int
-    }
-    
-    private func openAppSettings() {
-        if let settingsUrl = URL(string: UIApplication.openSettingsURLString) {
-            UIApplication.shared.open(settingsUrl)
-        }
+    // Preview에서는 실제 위치 서비스 시작하지 않음
+    override func requestLocationPermission() {
+        print("🎭 Preview에서 위치 권한 요청 - 이미 허용됨")
     }
 }
 
@@ -461,3 +300,5 @@ struct ShellMap: View {
     ShellMap()
         .background(Color.turtleRunTheme.backgroundColor)
 } 
+
+
