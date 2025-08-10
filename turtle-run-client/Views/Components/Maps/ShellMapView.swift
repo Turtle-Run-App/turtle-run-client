@@ -14,6 +14,11 @@ struct ShellMapView: UIViewRepresentable {
         mapView.userTrackingMode = .none
         mapView.mapType = .standard
         
+        // 3D view 기능 비활성화 및 compass 상시 노출
+        mapView.isPitchEnabled = false          // 3D 틸트(피치) 비활성화
+        mapView.showsCompass = true             // compass 상시 노출
+        mapView.isRotateEnabled = true          // 회전은 허용 (compass 기능을 위해)
+        
         // 지도 줌 레벨 제한 설정 (최대 줌아웃 3km 제한)
         let cameraZoomRange = MKMapView.CameraZoomRange(
             minCenterCoordinateDistance: 800,   // 최소 거리 (최대 줌인) - 20m Grid 가시성
