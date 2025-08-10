@@ -24,9 +24,9 @@ struct MainShellDashboardScreen: View {
         }
         .background(Color.turtleRunTheme.backgroundColor)
         .navigationBarHidden(true)
-        .fullScreenCover(isPresented: $showProfileMenu) {
-            ProfileMenuScreen()
-        }
+//        .fullScreenCover(isPresented: $showProfileMenu) {
+//            ProfileMenuScreen()
+//        }
         .ignoresSafeArea()
     }
 }
