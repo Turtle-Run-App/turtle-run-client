@@ -37,6 +37,47 @@ class HealthKitManager {
         healthStore.execute(query)
     }
     
+    // 특정 기간의 러닝 워크아웃 가져오기 (3개월치)
+    func fetchRunningWorkoutsForPeriod(monthsBack: Int = 3, completion: @escaping ([HKWorkout]) -> Void) {
+        let calendar = Calendar.current
+        let endDate = Date()
+        let startDate = calendar.date(byAdding: .month, value: -monthsBack, to: endDate) ?? endDate
+        
+        print("📅 Fetching workouts from \(startDate) to \(endDate)")
+        
+        // 러닝 워크아웃 + 날짜 범위 조건
+        let workoutPredicate = HKQuery.predicateForWorkouts(with: .running)
+        let datePredicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: [])
+        let combinedPredicate = NSCompoundPredicate(andPredicateWithSubpredicates: [workoutPredicate, datePredicate])
+        
+        let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
+        
+        // limit을 HKObjectQueryNoLimit으로 설정하여 모든 데이터 가져오기
+        let query = HKSampleQuery(
+            sampleType: HKObjectType.workoutType(),
+            predicate: combinedPredicate,
+            limit: HKObjectQueryNoLimit,
+            sortDescriptors: [sortDescriptor]
+        ) { _, samples, error in
+            if let error = error {
+                print("❌ Error fetching workouts: \(error)")
+                DispatchQueue.main.async {
+                    completion([])
+                }
+                return
+            }
+            
+            let workouts = samples as? [HKWorkout] ?? []
+            print("✅ Found \(workouts.count) workouts in the last \(monthsBack) months")
+            
+            DispatchQueue.main.async {
+                completion(workouts)
+            }
+        }
+        
+        healthStore.execute(query)
+    }
+    
     // 워크아웃 내 심박수 샘플 가져오기
     func fetchHeartRates(for workout: HKWorkout, completion: @escaping ([HKQuantitySample]) -> Void) {
         let heartRateType = HKQuantityType.quantityType(forIdentifier: .heartRate)!

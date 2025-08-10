@@ -9,6 +9,11 @@ class WorkoutDataService: ObservableObject {
     @Published var isLoadingDetailedData: Bool = false
     @Published var syncStatus: String? = nil
     @Published var isInitialSyncInProgress: Bool = false
+    @Published var threeMonthSyncProgress: Double = 0.0
+    @Published var threeMonthSyncStatus: String? = nil
+    @Published var isThreeMonthSyncInProgress: Bool = false
+    @Published var totalWorkoutsToSync: Int = 0
+    @Published var syncedWorkoutsCount: Int = 0
     
     private let healthKitManager = HealthKitManager.shared
     
@@ -22,6 +27,105 @@ class WorkoutDataService: ObservableObject {
                 } else if !success {
                     self?.errorMessage = "HealthKit 권한이 필요합니다."
                 }
+            }
+        }
+    }
+    
+    // MARK: - Three Month Workout Data Sync
+    func syncThreeMonthWorkoutData() {
+        isThreeMonthSyncInProgress = true
+        threeMonthSyncProgress = 0.0
+        syncedWorkoutsCount = 0
+        totalWorkoutsToSync = 0
+        threeMonthSyncStatus = "3개월 데이터 동기화 시작..."
+        
+        // 먼저 권한 확인 및 요청
+        healthKitManager.requestAuthorization { [weak self] success, error in
+            DispatchQueue.main.async {
+                self?.isAuthorized = success
+                if let error = error {
+                    self?.errorMessage = error.localizedDescription
+                    self?.isThreeMonthSyncInProgress = false
+                    self?.threeMonthSyncStatus = "권한 요청 실패"
+                    return
+                }
+                
+                if !success {
+                    self?.errorMessage = "HealthKit 권한이 필요합니다."
+                    self?.isThreeMonthSyncInProgress = false
+                    self?.threeMonthSyncStatus = "권한 거부됨"
+                    return
+                }
+                
+                // 3개월치 러닝 워크아웃 데이터 수집 및 동기화
+                self?.threeMonthSyncStatus = "3개월 워크아웃 데이터 검색 중..."
+                self?.healthKitManager.fetchRunningWorkoutsForPeriod(monthsBack: 3) { workouts in
+                    guard !workouts.isEmpty else {
+                        DispatchQueue.main.async {
+                            self?.isThreeMonthSyncInProgress = false
+                            self?.threeMonthSyncStatus = "3개월간 러닝 기록이 없습니다."
+                            self?.threeMonthSyncProgress = 1.0
+                        }
+                        return
+                    }
+                    
+                    DispatchQueue.main.async {
+                        self?.totalWorkoutsToSync = workouts.count
+                        self?.threeMonthSyncStatus = "\(workouts.count)개 워크아웃 발견됨. 동기화 시작..."
+                    }
+                    
+                    self?.syncAllThreeMonthWorkoutData(workouts: workouts)
+                }
+            }
+        }
+    }
+    
+    private func syncAllThreeMonthWorkoutData(workouts: [HKWorkout]) {
+        let group = DispatchGroup()
+        var allWorkoutData: [WorkoutDetailedData] = []
+        var syncErrors: [String] = []
+        let totalWorkouts = workouts.count
+        
+        for (index, workout) in workouts.enumerated() {
+            group.enter()
+            
+            // 진행상황 업데이트
+            DispatchQueue.main.async {
+                self.threeMonthSyncStatus = "워크아웃 \(index + 1)/\(totalWorkouts) 처리 중..."
+                self.threeMonthSyncProgress = Double(index) / Double(totalWorkouts) * 0.8 // 80%까지는 데이터 수집
+            }
+            
+            healthKitManager.fetchCompleteWorkoutData(for: workout) { detailedData in
+                allWorkoutData.append(detailedData)
+                
+                // 각 워크아웃 데이터를 서버에 동기화
+                self.postWorkoutData(detailedData) { success, error in
+                    DispatchQueue.main.async {
+                        if success {
+                            self.syncedWorkoutsCount += 1
+                            self.threeMonthSyncStatus = "워크아웃 동기화 완료: \(self.syncedWorkoutsCount)/\(totalWorkouts)"
+                        } else {
+                            syncErrors.append("워크아웃 \(workout.uuid.uuidString): \(error ?? "알 수 없는 오류")")
+                        }
+                        
+                        // 진행률 업데이트 (80% + 각 워크아웃당 20%/totalWorkouts)
+                        let currentProgress = 0.8 + (Double(self.syncedWorkoutsCount + syncErrors.count) / Double(totalWorkouts)) * 0.2
+                        self.threeMonthSyncProgress = min(currentProgress, 1.0)
+                    }
+                    group.leave()
+                }
+            }
+        }
+        
+        group.notify(queue: .main) {
+            self.isThreeMonthSyncInProgress = false
+            self.threeMonthSyncProgress = 1.0
+            
+            if syncErrors.isEmpty {
+                self.threeMonthSyncStatus = "3개월 동기화 완료! 총 \(allWorkoutData.count)개 워크아웃"
+            } else {
+                self.threeMonthSyncStatus = "동기화 완료 (성공: \(self.syncedWorkoutsCount), 실패: \(syncErrors.count))"
+                self.errorMessage = syncErrors.joined(separator: "\n")
             }
         }
     }
