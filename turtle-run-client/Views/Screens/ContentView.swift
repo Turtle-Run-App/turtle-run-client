@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct ContentView: View {
+    @EnvironmentObject var workoutDataService: WorkoutDataService
+    
     var body: some View {
         MainShellDashboardScreen()
     }
@@ -8,4 +10,5 @@ struct ContentView: View {
 
 #Preview {
     ContentView()
+        .environmentObject(WorkoutDataService())
 }

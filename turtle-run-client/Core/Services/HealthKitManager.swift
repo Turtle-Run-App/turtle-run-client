@@ -6,6 +6,10 @@ class HealthKitManager {
     static let shared = HealthKitManager()
     private let healthStore = HKHealthStore()
     
+    // Observer query 관리를 위한 프로퍼티
+    private var workoutObserverQuery: HKObserverQuery?
+    private var workoutObserverCallback: (() -> Void)?
+    
     private init() {}
     
     // HealthKit 권한 요청
@@ -22,6 +26,108 @@ class HealthKitManager {
             HKQuantityType.quantityType(forIdentifier: .distanceCycling)!
         ]
         healthStore.requestAuthorization(toShare: [], read: typesToRead, completion: completion)
+    }
+    
+    // MARK: - Observer Pattern for Workout Changes
+    
+    /// 새로운 워크아웃 데이터 추가를 감지하는 Observer 시작
+    func startWorkoutObserver(callback: @escaping () -> Void) {
+        print("🎯 HealthKit Observer 설정 시작...")
+        self.workoutObserverCallback = callback
+        
+        let workoutType = HKObjectType.workoutType()
+        
+        // 기존 observer가 있다면 정지
+        stopWorkoutObserver()
+        
+        print("📋 Observer Query 생성 중...")
+        workoutObserverQuery = HKObserverQuery(sampleType: workoutType, predicate: nil) { [weak self] query, completionHandler, error in
+            print("🔔 HealthKit Observer 트리거됨!")
+            print("   - 시간: \(Date())")
+            print("   - Query: \(query)")
+            
+            if let error = error {
+                print("❌ HealthKit Observer 오류: \(error.localizedDescription)")
+                completionHandler()
+                return
+            }
+            
+            print("✅ Observer 콜백 실행 준비...")
+            
+            // 메인 쓰레드에서 콜백 실행
+            DispatchQueue.main.async {
+                print("📞 콜백 실행 중...")
+                self?.workoutObserverCallback?()
+                print("✅ 콜백 실행 완료")
+            }
+            
+            // HealthKit에 처리 완료를 알림
+            completionHandler()
+            print("📬 HealthKit에 완료 응답 전송")
+        }
+        
+        // Observer 시작
+        if let observerQuery = workoutObserverQuery {
+            print("🚀 HealthStore에 Observer 등록 중...")
+            healthStore.execute(observerQuery)
+            print("✅ Observer 등록 완료!")
+            print("   - Observer ID: \(ObjectIdentifier(observerQuery))")
+        } else {
+            print("❌ Observer Query 생성 실패!")
+            return
+        }
+        
+        // 백그라운드 딜리버리 활성화
+        enableBackgroundDelivery()
+        
+        print("🎉 HealthKit Observer 설정 완료!")
+    }
+    
+    /// 워크아웃 Observer 중지
+    func stopWorkoutObserver() {
+        if let observerQuery = workoutObserverQuery {
+            healthStore.stop(observerQuery)
+            print("🛑 HealthKit 워크아웃 Observer 중지됨")
+        } else {
+            print("ℹ️ 중지할 Observer가 없습니다")
+        }
+        workoutObserverQuery = nil
+        workoutObserverCallback = nil
+        
+        // 백그라운드 딜리버리 비활성화
+        disableBackgroundDelivery()
+    }
+    
+    /// 백그라운드에서도 HealthKit 데이터 변경사항을 감지할 수 있도록 설정
+    private func enableBackgroundDelivery() {
+        let workoutType = HKObjectType.workoutType()
+        
+        print("🌙 백그라운드 딜리버리 활성화 시도...")
+        
+        healthStore.enableBackgroundDelivery(for: workoutType, frequency: .immediate) { success, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    print("❌ 백그라운드 딜리버리 활성화 실패: \(error.localizedDescription)")
+                } else if success {
+                    print("✅ 백그라운드 딜리버리 활성화 성공")
+                } else {
+                    print("⚠️ 백그라운드 딜리버리 활성화 실패 (이유 불명)")
+                }
+            }
+        }
+    }
+    
+    /// 백그라운드 딜리버리 비활성화
+    private func disableBackgroundDelivery() {
+        let workoutType = HKObjectType.workoutType()
+        
+        healthStore.disableBackgroundDelivery(for: workoutType) { success, error in
+            if let error = error {
+                print("❌ 백그라운드 딜리버리 비활성화 실패: \(error.localizedDescription)")
+            } else if success {
+                print("✅ 백그라운드 딜리버리 비활성화 성공")
+            }
+        }
     }
     
     // 최근 러닝 워크아웃 가져오기
