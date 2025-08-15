@@ -10,8 +10,8 @@ struct RecentShellDetailScreen: View {
         NavigationView {
             ScrollView {
                 VStack(spacing: 20) {
-                    // 헤더 카드
-                    headerCard
+                    // Shell 시각화 카드
+                    shellVisualizationCard
                     
                     // 기본 통계 카드
                     basicStatsCard
@@ -34,7 +34,7 @@ struct RecentShellDetailScreen: View {
                 .padding(.vertical, 16)
             }
             .background(Color.turtleRunTheme.backgroundColor)
-            .navigationTitle("최근 Shell 상세")
+            .navigationTitle("🐢 Shell 동기화 완료!")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -47,42 +47,41 @@ struct RecentShellDetailScreen: View {
         }
     }
     
-    // MARK: - Header Card
-    private var headerCard: some View {
-        VStack(spacing: 16) {
-            // 성공 아이콘
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 60))
-                .foregroundColor(.green)
-                .shadow(color: .green.opacity(0.3), radius: 8, x: 0, y: 4)
+    // MARK: - Shell Visualization Card
+    private var shellVisualizationCard: some View {
+        VStack(spacing: 20) {
+            // Shell 클러스터 시각화
+            shellClusterVisualization
             
-            Text("동기화 완료!")
-                .font(.system(size: 24, weight: .bold))
-                .foregroundColor(.turtleRunTheme.textColor)
-            
-            Text("새로운 Shell이 성공적으로 추가되었습니다")
-                .font(.system(size: 16))
-                .foregroundColor(.turtleRunTheme.textSecondaryColor)
-                .multilineTextAlignment(.center)
-            
-            // 날짜 정보
-            Text(formatDate(workoutData.startDate))
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(.turtleRunTheme.accentColor)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(
-                    Capsule()
-                        .fill(Color.turtleRunTheme.accentColor.opacity(0.2))
-                )
+            // Shell 정보
+            VStack(spacing: 12) {
+                Text("새로운 Shell이 생성되었습니다!")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundColor(.turtleRunTheme.textColor)
+                
+                Text("러닝 거리: \(workoutData.formattedDistance)")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(.turtleRunTheme.accentColor)
+                
+                // 날짜 정보
+                Text(formatDate(workoutData.startDate))
+                    .font(.system(size: 14))
+                    .foregroundColor(.turtleRunTheme.textSecondaryColor)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(
+                        Capsule()
+                            .fill(Color.turtleRunTheme.accentColor.opacity(0.15))
+                    )
+            }
         }
         .padding(24)
         .frame(maxWidth: .infinity)
         .background(
             LinearGradient(
-                gradient: Gradient(stops: [
-                    .init(color: .green.opacity(0.1), location: 0),
-                    .init(color: .turtleRunTheme.accentColor.opacity(0.1), location: 1)
+                gradient: Gradient(colors: [
+                    .turtleRunTheme.accentColor.opacity(0.1),
+                    .turtleRunTheme.secondaryColor.opacity(0.05)
                 ]),
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -90,10 +89,191 @@ struct RecentShellDetailScreen: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 20)
-                .stroke(Color.green.opacity(0.3), lineWidth: 1)
+                .stroke(Color.turtleRunTheme.accentColor.opacity(0.3), lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: 20))
         .shadow(color: .black.opacity(0.3), radius: 12, x: 0, y: 8)
+    }
+    
+    // MARK: - Shell Cluster Visualization
+    private var shellClusterVisualization: some View {
+        VStack(spacing: 16) {
+            Text("생성된 Shell")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(.turtleRunTheme.textColor)
+            
+            // Shell 그리드 패턴 (정육각형들)
+            shellGridPattern
+        }
+    }
+    
+    // MARK: - Shell Grid Pattern
+    private var shellGridPattern: some View {
+        let shellCount = calculateShellCount()
+        
+        return VStack(spacing: 12) {
+            // 육각형 그리드에 가상 러닝 경로 표시
+            shellGridVisualization(shellCount: shellCount)
+            
+            // Shell 개수와 종족 정보 표시
+            VStack(spacing: 4) {
+                Text("\(shellCount)개의 Shell")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.turtleRunTheme.textColor)
+                
+                Text("부족: 그리스거북")
+                    .font(.system(size: 12))
+                    .foregroundColor(.turtleRunTheme.textSecondaryColor)
+            }
+        }
+    }
+    
+        // MARK: - Shell Grid Visualization
+    private func shellGridVisualization(shellCount: Int) -> some View {
+        let hexSize: CGFloat = 16  // 크기 증가
+        let runningPathIndices = getRunningPathIndices(shellCount: shellCount)
+        let gridCells = generateGridCells()
+        
+        return ZStack {
+            // HexagonGridUtil 방식을 사용한 정확한 육각형 그리드
+            ForEach(Array(gridCells.enumerated()), id: \.offset) { index, cell in
+                let position = hexToPixelPosition(q: cell.q, r: cell.r, hexSize: hexSize)
+                
+                HexagonShape()
+                    .fill(runningPathIndices.contains(index) ? 
+                          getShellColor(for: index) : 
+                          Color.clear)
+                    .frame(width: hexSize * 2, height: hexSize * 2)
+                    .rotationEffect(.degrees(30)) // flat-top 방향으로 회전
+                    .position(x: position.x, y: position.y)
+            }
+        }
+        .frame(width: 280, height: 120)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.turtleRunTheme.secondaryColor.opacity(0.3))
+        )
+    }
+    
+    // MARK: - Generate Grid Cells
+    private func generateGridCells() -> [(q: Int, r: Int)] {
+        var cells: [(q: Int, r: Int)] = []
+        
+        // Shell 크기가 커진 만큼 그리드 개수 감소
+        let qRange = -4...4   // 가로 범위 (9개)
+        let rRange = -1...1   // 세로 범위 (3개)
+        
+        for r in rRange {
+            for q in qRange {
+                cells.append((q: q, r: r))
+            }
+        }
+        
+        return cells
+    }
+    
+    // MARK: - Get Shell Color with Density
+    private func getShellColor(for index: Int) -> Color {
+        let density = getShellDensity(for: index)
+        return Color.turtleRunTheme.blueTurtle.opacity(density.alphaValue)
+    }
+    
+    // MARK: - Get Shell Density
+    private func getShellDensity(for index: Int) -> ShellDensity {
+        // 인덱스와 워크아웃 데이터를 기반으로 다양한 density 생성
+        let distance = workoutData.totalDistance / 1000.0
+        let seed = Int(workoutData.startDate.timeIntervalSince1970) + index
+        
+        // 기본 밀도 계산 (거리 기반)
+        let baseDensity = min(5, max(1, Int(distance / 2.0) + 1))
+        
+        // 인덱스 기반 변화 (-2 ~ +2)
+        let variation = (seed % 5) - 2
+        let finalDensity = max(1, min(5, baseDensity + variation))
+        
+        return ShellDensity(rawValue: finalDensity) ?? .level3
+    }
+    
+    // MARK: - Hex to Pixel Position (컨테이너에 맞게 정렬)
+    private func hexToPixelPosition(q: Int, r: Int, hexSize: CGFloat) -> CGPoint {
+        // 컨테이너에 맞게 정렬된 육각형 그리드 좌표 변환
+        // flat-top 육각형 방향 사용 (컨테이너와 평행하게)
+        let x = hexSize * (sqrt(3.0) * CGFloat(q) + sqrt(3.0)/2.0 * CGFloat(r))
+        let y = hexSize * (3.0/2.0 * CGFloat(r))
+        
+        // 컨테이너 중앙으로 이동
+        let centerX: CGFloat = 140
+        let centerY: CGFloat = 60
+        
+        return CGPoint(x: centerX + x, y: centerY + y)
+    }
+    
+    // MARK: - Get Running Path Indices
+    private func getRunningPathIndices(shellCount: Int) -> Set<Int> {
+        var pathIndices: Set<Int> = []
+        let gridCells = generateGridCells()
+        
+        // 왼쪽에서 시작해서 오른쪽으로 진행하는 러닝 경로
+        let qRange = -4...4
+        let rRange = -1...1
+        
+        // 중간 행에서 시작
+        let startR = 0
+        var currentQ = -3  // 왼쪽에서 시작
+        var currentR = startR
+        
+        let maxShells = min(shellCount, 12) // 작아진 그리드에 맞게 조정
+        
+        for i in 0..<maxShells {
+            // 현재 위치의 인덱스 찾기
+            if let cellIndex = gridCells.firstIndex(where: { $0.q == currentQ && $0.r == currentR }) {
+                pathIndices.insert(cellIndex)
+            }
+            
+            // 다음 위치 결정 (주로 오른쪽으로, 가끔 위아래로)
+            if i % 4 == 3 && currentR > rRange.lowerBound { // 가끔 위로
+                currentR -= 1
+            } else if i % 3 == 2 && currentR < rRange.upperBound { // 가끔 아래로
+                currentR += 1
+            } else if currentQ < qRange.upperBound { // 주로 오른쪽으로
+                currentQ += 1
+            } else {
+                break // 오른쪽 끝에 도달
+            }
+        }
+        
+        return pathIndices
+    }
+    
+    // MARK: - Hexagon Shell Shape
+    private func hexagonShell(tribe: TribeType, density: ShellDensity, size: CGFloat) -> some View {
+        HexagonShape()
+            .fill(tribe.colorWithDensity(density))
+            .overlay(
+                HexagonShape()
+                    .stroke(tribe.color, lineWidth: 1.5)
+            )
+            .frame(width: size, height: size)
+            .shadow(color: tribe.color.opacity(0.3), radius: 2, x: 0, y: 1)
+    }
+    
+    // MARK: - Helper Methods
+    private func calculateShellCount() -> Int {
+        // 거리 기반으로 Shell 개수 계산 (1km당 약 3-5개)
+        let distance = workoutData.totalDistance / 1000.0 // km로 변환
+        return max(1, min(12, Int(distance * 4))) // 최소 1개, 최대 12개
+    }
+    
+
+    
+    private func getDensityForShell(index: Int) -> ShellDensity {
+        // 거리와 인덱스 기반으로 밀도 계산
+        let distance = workoutData.totalDistance / 1000.0
+        let baseDensity = min(5, max(1, Int(distance / 2.0) + 1)) // 거리 기반 기본 밀도
+        let variation = (index % 3) - 1 // -1, 0, 1 변화
+        let finalDensity = max(1, min(5, baseDensity + variation))
+        
+        return ShellDensity(rawValue: finalDensity) ?? .level3
     }
     
     // MARK: - Basic Stats Card
@@ -416,6 +596,7 @@ struct InfoRow: View {
     }
 }
 
+
 // MARK: - Preview
 #Preview {
     // 샘플 데이터 생성
@@ -429,8 +610,47 @@ struct InfoRow: View {
         metadata: nil
     )
     
-    let sampleData = WorkoutDetailedData(workout: sampleWorkout)
+    var sampleData = WorkoutDetailedData(workout: sampleWorkout)
     
-    RecentShellDetailScreen(workoutData: sampleData)
+    // 가상의 심박수 데이터 생성
+    let heartRateUnit = HKUnit.count().unitDivided(by: .minute())
+    let startDate = sampleWorkout.startDate
+    var heartRateSamples: [HKQuantitySample] = []
+    
+    // 49분 동안 5분마다 심박수 데이터 생성 (총 10개)
+    for i in 0..<10 {
+        let timeOffset = TimeInterval(i * 5 * 60) // 5분 간격
+        let sampleDate = startDate.addingTimeInterval(timeOffset)
+        
+        // 심박수 변화 (140-180 bpm 범위에서 변화)
+        let baseHeartRate = 155.0
+        let variation = sin(Double(i) * 0.5) * 15.0 + Double.random(in: -10...10)
+        let heartRate = max(130, min(185, baseHeartRate + variation))
+        
+        let quantity = HKQuantity(unit: heartRateUnit, doubleValue: heartRate)
+        let sample = HKQuantitySample(
+            type: HKQuantityType.quantityType(forIdentifier: .heartRate)!,
+            quantity: quantity,
+            start: sampleDate,
+            end: sampleDate.addingTimeInterval(60) // 1분 duration
+        )
+        heartRateSamples.append(sample)
+    }
+    
+    sampleData.heartRates = heartRateSamples
+    
+    // 가상의 스텝 데이터 추가
+    let stepsUnit = HKUnit.count()
+    let totalSteps = 12500
+    let stepsQuantity = HKQuantity(unit: stepsUnit, doubleValue: Double(totalSteps))
+    let stepsample = HKQuantitySample(
+        type: HKQuantityType.quantityType(forIdentifier: .stepCount)!,
+        quantity: stepsQuantity,
+        start: startDate,
+        end: sampleWorkout.endDate
+    )
+    sampleData.steps = [stepsample]
+    
+    return RecentShellDetailScreen(workoutData: sampleData)
         .background(Color.turtleRunTheme.backgroundColor)
 }
