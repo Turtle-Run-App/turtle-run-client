@@ -14,6 +14,7 @@ struct ShellMap: View {
     @State private var lastRegion: MKCoordinateRegion?
     @State private var shouldCenterOnUser = false
     @State private var hasReceivedInitialLocation = false
+    @State private var hasDummyDataGenerated = false // 더미 데이터 생성 여부 플래그
     
     var body: some View {
             ZStack {
@@ -30,10 +31,19 @@ struct ShellMap: View {
             }
             .onReceive(locationManager.$currentLocation) { newLocation in
                 // 처음으로 위치를 받았을 때 해당 위치로 이동하고 Shell 재생성
-                if let _ = newLocation, !hasReceivedInitialLocation {
+                if let location = newLocation, !hasReceivedInitialLocation {
                     hasReceivedInitialLocation = true
                     shouldCenterOnUser = true
-                    generateInitialShells() // 새로운 위치 기준으로 Shell 재생성
+                    
+                    // 실제 사용자 위치 기준으로 Shell 재생성
+                    let userRegion = MKCoordinateRegion(
+                        center: location.coordinate,
+                        span: MKCoordinateSpan(latitudeDelta: 0.009, longitudeDelta: 0.009)
+                    )
+                    generateShellsForRegion(userRegion)
+                    lastRegion = userRegion
+                    
+                    print("📍 사용자 위치 받음: \(location.coordinate.latitude), \(location.coordinate.longitude)")
                 }
             }
             
@@ -178,9 +188,15 @@ struct ShellMap: View {
         let existingShells = shells
         var mergedShells = mergeShells(existing: existingShells, new: newShells)
         
-        // Preview 모드에서만 테스트 Shell 생성
-        if ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1" && shells.isEmpty {
-            mergedShells = addTestShells(to: mergedShells, region: region)
+        // 개발/테스트 모드에서 더미 Shell 생성 (실제 위치를 받은 후 1회만)
+        // 또는 위치 권한이 거부된 상태에서 현재 지도 중심이 서울 시청이 아닌 경우
+        let isNotSeoulCityHall = abs(region.center.latitude - 37.5665) > 0.001 || 
+                                abs(region.center.longitude - 126.978) > 0.001
+        
+        if !hasDummyDataGenerated && (hasReceivedInitialLocation || isNotSeoulCityHall) {
+            mergedShells = addDummyShells(to: mergedShells, region: region)
+            hasDummyDataGenerated = true
+            print("🐢 더미 Shell 데이터 생성됨 - 지도 중심: \(region.center.latitude), \(region.center.longitude)")
         }
         
         // 거리 기반으로 Shell 정리 (가장 먼 Shell부터 제거)
@@ -223,8 +239,8 @@ struct ShellMap: View {
         }
     }
     
-    // MARK: - Preview용 테스트 Shell 생성 (Preview에서만 실행)
-    private func addTestShells(to shells: [ShellGridCell], region: MKCoordinateRegion) -> [ShellGridCell] {
+    // MARK: - 현재 위치 기준 더미 Shell 생성 (개발/테스트용)
+    private func addDummyShells(to shells: [ShellGridCell], region: MKCoordinateRegion) -> [ShellGridCell] {
         var shellDict: [String: ShellGridCell] = [:]
         
         // 기존 Shell들을 딕셔너리로 변환
@@ -233,43 +249,313 @@ struct ShellMap: View {
             shellDict[key] = shell
         }
         
-        // 고정된 테스트 Shell 좌표들 (서울 시청 기준)
-        let testShellData: [(q: Int, r: Int, tribe: TribeType, density: ShellDensity)] = [
-            // 붉은귀거북 - 동쪽 러닝 코스
-            (2, 3, .redTurtle, .level5), (3, 3, .redTurtle, .level4), (4, 2, .redTurtle, .level3),
-            (5, 2, .redTurtle, .level4), (6, 1, .redTurtle, .level5), (7, 1, .redTurtle, .level3),
-            (8, 0, .redTurtle, .level2), (9, 0, .redTurtle, .level4), (10, -1, .redTurtle, .level3),
-            (11, -1, .redTurtle, .level5), (12, -2, .redTurtle, .level2), (13, -2, .redTurtle, .level4),
-            
-            // 사막거북 - 서쪽 러닝 코스
-            (-2, -3, .yellowTurtle, .level4), (-3, -2, .yellowTurtle, .level5), (-4, -2, .yellowTurtle, .level3),
-            (-5, -1, .yellowTurtle, .level4), (-6, -1, .yellowTurtle, .level2), (-7, 0, .yellowTurtle, .level5),
-            (-8, 0, .yellowTurtle, .level3), (-9, 1, .yellowTurtle, .level4), (-10, 1, .yellowTurtle, .level2),
-            (-11, 2, .yellowTurtle, .level5), (-12, 2, .yellowTurtle, .level3), (-13, 3, .yellowTurtle, .level4),
-            
-            // 그리스거북 - 남쪽 러닝 코스
-            (1, -5, .blueTurtle, .level3), (0, -4, .blueTurtle, .level5), (-1, -4, .blueTurtle, .level2),
-            (-2, -3, .blueTurtle, .level4), (-3, -3, .blueTurtle, .level3), (-4, -2, .blueTurtle, .level5),
-            (-5, -2, .blueTurtle, .level2), (-6, -1, .blueTurtle, .level4), (-7, -1, .blueTurtle, .level3),
-            (-8, 0, .blueTurtle, .level5), (-9, 0, .blueTurtle, .level2), (-10, 1, .blueTurtle, .level4),
-            
-            // 추가 산발적 Shell들
-            (15, 5, .redTurtle, .level1), (-15, -5, .yellowTurtle, .level1), (5, -15, .blueTurtle, .level1),
-            (8, 8, .redTurtle, .level2), (-8, 8, .yellowTurtle, .level2), (0, -8, .blueTurtle, .level2),
-            (12, -8, .redTurtle, .level3), (-12, 8, .yellowTurtle, .level3), (3, 12, .blueTurtle, .level3)
-        ]
+        // 현재 지도 중심을 기준으로 상대적 좌표 (0, 0) 사용
+        let centerQ = 0
+        let centerR = 0
         
-        // 테스트 Shell 적용
-        for (q, r, tribe, density) in testShellData {
-            let key = "\(q),\(r)"
+        // 현재 지도 중심 기준으로 동적 Shell 패턴 생성
+        let dummyShellData = generateDummyShellPattern(
+            centerQ: centerQ, 
+            centerR: centerR,
+            mapCenter: region.center // 실제 지도 중심 좌표 전달
+        )
+        
+        // 더미 Shell 적용 (현재 지도 중심 기준으로 좌표 변환)
+        let mapCenterHex = HexagonGridUtil.coordinateToHex(coordinate: region.center)
+        print("🗺️ 지도 중심 육각 좌표: q=\(mapCenterHex.q), r=\(mapCenterHex.r)")
+        print("🎯 생성할 더미 Shell 개수: \(dummyShellData.count)")
+        
+        var appliedShellCount = 0
+        for (relativeQ, relativeR, tribe, density) in dummyShellData {
+            // 상대 좌표를 현재 지도 중심 기준 절대 좌표로 변환
+            let absoluteQ = mapCenterHex.q + relativeQ
+            let absoluteR = mapCenterHex.r + relativeR
+            let key = "\(absoluteQ),\(absoluteR)"
+            
             if var shell = shellDict[key] {
                 shell.occupiedBy = tribe
                 shell.density = density
                 shellDict[key] = shell
+                appliedShellCount += 1
             }
         }
         
+        print("✅ 실제 적용된 Shell 개수: \(appliedShellCount)")
+        let shellCount = Array(shellDict.values).filter { $0.isShell }.count
+        print("🐢 최종 Shell 개수: \(shellCount)")
+        
         return Array(shellDict.values)
+    }
+    
+    // 현재 위치 기준으로 다양한 Shell 패턴 생성
+    private func generateDummyShellPattern(
+        centerQ: Int, 
+        centerR: Int, 
+        mapCenter: CLLocationCoordinate2D
+    ) -> [(q: Int, r: Int, tribe: TribeType, density: ShellDensity)] {
+        var shellData: [(q: Int, r: Int, tribe: TribeType, density: ShellDensity)] = []
+        print("🎨 더미 패턴 생성 시작 - 중심: (\(centerQ), \(centerR))")
+        
+        // 패턴 1: 붉은귀거북 - 동쪽 러닝 코스 (현재 위치에서 동쪽으로)
+        let redTurtlePattern = generateRunningCoursePattern(
+            centerQ: centerQ, 
+            centerR: centerR,
+            direction: .east,
+            tribe: .redTurtle,
+            length: 12
+        )
+        shellData.append(contentsOf: redTurtlePattern)
+        print("🔴 붉은귀거북 패턴: \(redTurtlePattern.count)개")
+        
+        // 패턴 2: 사막거북 - 서쪽 러닝 코스 (현재 위치에서 서쪽으로)
+        let yellowTurtlePattern = generateRunningCoursePattern(
+            centerQ: centerQ,
+            centerR: centerR,
+            direction: .west,
+            tribe: .yellowTurtle,
+            length: 12
+                )
+        shellData.append(contentsOf: yellowTurtlePattern)
+        print("🟡 사막거북 패턴: \(yellowTurtlePattern.count)개")
+        
+        // 패턴 3: 그리스거북 - 남쪽 러닝 코스 (현재 위치에서 남쪽으로)
+        let blueTurtlePattern = generateRunningCoursePattern(
+            centerQ: centerQ,
+            centerR: centerR,
+            direction: .south,
+            tribe: .blueTurtle,
+            length: 12
+        )
+        shellData.append(contentsOf: blueTurtlePattern)
+        print("🔵 그리스거북 패턴: \(blueTurtlePattern.count)개")
+        
+        // 패턴 4: 현재 위치 주변 랜덤 Shell들
+         let randomPattern = generateRandomShellsAroundCenter(
+             centerQ: centerQ,
+             centerR: centerR,
+             radius: 15,
+             count: 20
+         )
+         shellData.append(contentsOf: randomPattern)
+         print("🎲 랜덤 패턴: \(randomPattern.count)개")
+        
+        print("📊 총 더미 패턴: \(shellData.count)개")
+        return shellData
+    }
+    
+    // 면적을 가진 러닝 코스 덩어리 패턴 생성 (여러 사람의 경로가 겹친 효과)
+    private func generateRunningCoursePattern(
+        centerQ: Int,
+        centerR: Int,
+        direction: HexDirection,
+        tribe: TribeType,
+        length: Int
+    ) -> [(q: Int, r: Int, tribe: TribeType, density: ShellDensity)] {
+        
+        var pattern: [(q: Int, r: Int, tribe: TribeType, density: ShellDensity)] = []
+        let (baseQ, baseR) = direction.delta
+        
+        // 메인 코스 중심선 생성 (약간의 곡선 효과)
+        var mainPath: [(q: Int, r: Int)] = []
+        for i in 1...length {
+            // 기본 방향에 약간의 곡선 변화 추가
+            let curveOffset = sin(Double(i) * 0.3) * 0.8 // 부드러운 곡선
+            let perpQ = direction == .east || direction == .west ? 0 : 1
+            let perpR = direction == .east || direction == .west ? 1 : 0
+            
+            let q = centerQ + (baseQ * i) + Int(curveOffset * Double(perpQ))
+            let r = centerR + (baseR * i) + Int(curveOffset * Double(perpR))
+            
+            mainPath.append((q: q, r: r))
+        }
+        
+        // 메인 패스 주변에 면적을 가진 덩어리 생성
+        for (index, (centerQ, centerR)) in mainPath.enumerated() {
+            let progress = Double(index) / Double(mainPath.count - 1)
+            
+            // 거리에 따른 기본 밀도 계산
+            let baseDensity = calculateBaseDensity(for: index, totalLength: length)
+            
+            // 코스 폭 계산 (시작점이 넓고 점점 좁아짐)
+            let width = max(2, Int(4 * (1.0 - progress * 0.5)))
+            
+            // 중심점 주변에 덩어리 생성
+            let clusterCells = generateRunningCluster(
+                centerQ: centerQ,
+                centerR: centerR,
+                width: width,
+                baseDensity: baseDensity,
+                tribe: tribe
+            )
+            
+            pattern.append(contentsOf: clusterCells)
+        }
+        
+        // 추가 분기 경로 생성 (일부 러너들이 다른 경로로 뛴 효과)
+        let branchPaths = generateBranchPaths(
+            mainPath: mainPath,
+            direction: direction,
+            tribe: tribe
+        )
+        pattern.append(contentsOf: branchPaths)
+        
+        return pattern
+    }
+    
+    // 러닝 코스 한 지점 주변의 덩어리 생성
+    private func generateRunningCluster(
+        centerQ: Int,
+        centerR: Int,
+        width: Int,
+        baseDensity: ShellDensity,
+        tribe: TribeType
+    ) -> [(q: Int, r: Int, tribe: TribeType, density: ShellDensity)] {
+        
+        var cluster: [(q: Int, r: Int, tribe: TribeType, density: ShellDensity)] = []
+        
+        // 중심점 주변 원형으로 Shell 배치
+        for deltaQ in -width...width {
+            for deltaR in -width...width {
+                // 육각형 그리드에서의 거리 계산
+                let distance = max(abs(deltaQ), abs(deltaR), abs(deltaQ + deltaR))
+                
+                if distance <= width {
+                    let q = centerQ + deltaQ
+                    let r = centerR + deltaR
+                    
+                    // 중심에서 멀어질수록 밀도 감소 + 랜덤 요소
+                    let densityReduction = distance
+                    let randomFactor = Double.random(in: 0.7...1.3)
+                    
+                    let adjustedDensity = adjustDensity(
+                        baseDensity,
+                        reduction: densityReduction,
+                        randomFactor: randomFactor
+                    )
+                    
+                    // 일정 확률로 Shell 생성 (가장자리는 낮은 확률)
+                    let probability = 1.0 - (Double(distance) / Double(width + 1)) * 0.6
+                    if Double.random(in: 0...1) < probability {
+                        cluster.append((q: q, r: r, tribe: tribe, density: adjustedDensity))
+                    }
+                }
+            }
+        }
+        
+        return cluster
+    }
+    
+    // 분기 경로 생성 (일부 러너들의 다른 루트)
+    private func generateBranchPaths(
+        mainPath: [(q: Int, r: Int)],
+        direction: HexDirection,
+        tribe: TribeType
+    ) -> [(q: Int, r: Int, tribe: TribeType, density: ShellDensity)] {
+        
+        var branches: [(q: Int, r: Int, tribe: TribeType, density: ShellDensity)] = []
+        
+        // 메인 패스 중간 지점들에서 분기 생성
+        let branchPoints = stride(from: 2, to: mainPath.count - 2, by: 4)
+        
+        for branchIndex in branchPoints {
+            let (startQ, startR) = mainPath[branchIndex]
+            
+            // 분기 방향 (메인 방향에 수직)
+            let branchDirections = getPerpendicularDirections(to: direction)
+            
+            for branchDir in branchDirections {
+                let (branchQ, branchR) = branchDir.delta
+                let branchLength = Int.random(in: 2...4)
+                
+                for i in 1...branchLength {
+                    let q = startQ + (branchQ * i)
+                    let r = startR + (branchR * i)
+                    
+                    // 분기 밀도 상향 조정
+                    let density: ShellDensity = i == 1 ? .level4 : .level3
+                    
+                    // 50% 확률로 생성 (모든 분기가 다 생기면 너무 복잡함)
+                    if Double.random(in: 0...1) < 0.5 {
+                        branches.append((q: q, r: r, tribe: tribe, density: density))
+                    }
+                }
+            }
+        }
+        
+        return branches
+    }
+    
+    // 거리에 따른 기본 밀도 계산 (전체적으로 높은 밀도 유지)
+    private func calculateBaseDensity(for index: Int, totalLength: Int) -> ShellDensity {
+        let progress = Double(index) / Double(totalLength - 1)
+        
+        if progress < 0.3 {
+            return .level5  // 시작 지점 - 매우 높음
+        } else if progress < 0.6 {
+            return .level4  // 초중반 - 높음
+        } else if progress < 0.8 {
+            return .level4  // 중후반 - 높음 (level3 → level4로 상향)
+        } else {
+            return .level3  // 후반 - 보통 (level2 → level3으로 상향)
+        }
+    }
+    
+    // 밀도 조정 (거리와 랜덤 팩터 반영, 덜 급격한 감소)
+    private func adjustDensity(
+        _ baseDensity: ShellDensity,
+        reduction: Int,
+        randomFactor: Double
+    ) -> ShellDensity {
+        let baseValue = baseDensity.rawValue
+        
+        // 거리에 따른 감소를 덜 급격하게 조정
+        let gentleReduction = max(0, reduction - 1) // 첫 번째 거리는 감소 없음
+        let reductionFactor = min(1.0, Double(gentleReduction) * 0.3) // 30%씩만 감소
+        
+        let adjustedValue = max(2, Int(Double(baseValue) * (1.0 - reductionFactor) * randomFactor))
+        
+        return ShellDensity(rawValue: min(5, adjustedValue)) ?? .level2
+    }
+    
+    // 주어진 방향에 수직인 방향들 반환
+    private func getPerpendicularDirections(to direction: HexDirection) -> [HexDirection] {
+        switch direction {
+        case .east, .west:
+            return [.northeast, .northwest]
+        case .north, .south:
+            return [.east, .west]
+        case .northeast, .northwest:
+            return [.north, .south]
+        }
+    }
+    
+    // 현재 위치 주변 랜덤 Shell 생성
+    private func generateRandomShellsAroundCenter(
+        centerQ: Int,
+        centerR: Int,
+        radius: Int,
+        count: Int
+    ) -> [(q: Int, r: Int, tribe: TribeType, density: ShellDensity)] {
+        
+        var randomShells: [(q: Int, r: Int, tribe: TribeType, density: ShellDensity)] = []
+        let tribes = TribeType.allCases
+        let densities = ShellDensity.allCases
+        
+        for _ in 0..<count {
+            // 랜덤 위치 생성 (원형 분포)
+            let angle = Double.random(in: 0...(2 * Double.pi))
+            let distance = Int.random(in: 5...radius)
+            
+            let q = centerQ + Int(Double(distance) * cos(angle))
+            let r = centerR + Int(Double(distance) * sin(angle))
+            
+            let tribe = tribes.randomElement() ?? .redTurtle
+            let density = densities.randomElement() ?? .level3
+            
+            randomShells.append((q: q, r: r, tribe: tribe, density: density))
+        }
+        
+        return randomShells
     }
 }
 

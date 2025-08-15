@@ -107,6 +107,29 @@ enum TribeType: String, CaseIterable {
     }
 }
 
+// MARK: - Hexagon Direction
+enum HexDirection {
+    case east, west, south, north, northeast, northwest
+    
+    // 각 방향의 q, r 델타값
+    var delta: (q: Int, r: Int) {
+        switch self {
+        case .east:
+            return (1, 0)
+        case .west:
+            return (-1, 0)
+        case .south:
+            return (0, 1)
+        case .north:
+            return (0, -1)
+        case .northeast:
+            return (1, -1)
+        case .northwest:
+            return (-1, 1)
+        }
+    }
+}
+
 // MARK: - Hexagon Grid Utilities
 struct HexagonGridUtil {
     // 정육각형의 한 변 길이 (미터)
