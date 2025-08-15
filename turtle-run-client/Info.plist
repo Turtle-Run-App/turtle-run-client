@@ -19,7 +19,7 @@
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>LSRequiresIPhoneOS</key>
-    <true/>
+    <true />
     <key>UILaunchStoryboardName</key>
     <string>LaunchScreen</string>
     <key>UIMainStoryboardFile</key>
@@ -30,6 +30,8 @@
     <string>이 앱은 러닝 기록 등 건강 데이터를 연동하여 Shell 및 통계 기능을 제공합니다.</string>
     <key>NSLocationWhenInUseUsageDescription</key>
     <string>이 앱은 현재 위치를 기반으로 Shell 지도를 표시하고 러닝 경로를 추적하기 위해 위치 정보를 사용합니다.</string>
+    <key>NSUserNotificationsUsageDescription</key>
+    <string>이 앱은 러닝 완료 후 Shell 동기화 알림 및 중요한 앱 업데이트를 제공하기 위해 알림 권한이 필요합니다.</string>
     <key>UIBackgroundModes</key>
     <array>
         <string>background-processing</string>

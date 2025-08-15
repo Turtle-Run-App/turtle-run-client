@@ -64,6 +64,24 @@ class NotificationManager: NSObject, ObservableObject {
     
     // MARK: - Test Notification (개발용)
     func scheduleTestNotification() {
+        // 먼저 현재 알림 권한 상태 확인
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            print("🔔 알림 권한 상태: \(settings.authorizationStatus.rawValue)")
+            print("🔔 Alert 설정: \(settings.alertSetting.rawValue)")
+            print("🔔 Sound 설정: \(settings.soundSetting.rawValue)")
+            print("🔔 Badge 설정: \(settings.badgeSetting.rawValue)")
+            
+            DispatchQueue.main.async {
+                if settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional {
+                    self.createAndScheduleTestNotification()
+                } else {
+                    print("❌ 알림 권한이 없습니다. 설정에서 권한을 허용해주세요.")
+                }
+            }
+        }
+    }
+    
+    private func createAndScheduleTestNotification() {
         let content = UNMutableNotificationContent()
         content.title = "🐢 TurtleRun 테스트"
         content.subtitle = "동기화 완료!"
@@ -89,9 +107,9 @@ class NotificationManager: NSObject, ObservableObject {
         
         UNUserNotificationCenter.current().add(request) { error in
             if let error = error {
-                print("테스트 알림 스케줄링 실패: \(error)")
+                print("❌ 테스트 알림 스케줄링 실패: \(error)")
             } else {
-                print("테스트 알림이 2초 후에 표시됩니다.")
+                print("✅ 테스트 알림이 2초 후에 표시됩니다.")
             }
         }
     }
