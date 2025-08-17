@@ -1,6 +1,8 @@
 import Foundation
 import HealthKit
 import Combine
+import UserNotifications
+import UIKit
 
 class WorkoutDataService: ObservableObject {
     @Published var isAuthorized: Bool = false
@@ -17,8 +19,27 @@ class WorkoutDataService: ObservableObject {
     @Published var syncedWorkoutsCount: Int = 0
     
     private let healthKitManager = HealthKitManager.shared
-    private var lastSyncedWorkoutId: String? = nil
-    private var periodicTimer: Timer?
+    
+    // 중복 처리 방지를 위한 동시성 제어
+    private var isProcessingWorkout = false
+    private var processingWorkoutId: String?
+    private var lastProcessedTime: Date?
+    
+    // 중복 알림 방지: 마지막으로 알림을 보낸 워크아웃 ID (UserDefaults에 저장)
+    private var lastSyncedWorkoutId: String? {
+        get {
+            return UserDefaults.standard.string(forKey: "lastNotifiedWorkoutId")
+        }
+        set {
+            if let newValue = newValue {
+                UserDefaults.standard.set(newValue, forKey: "lastNotifiedWorkoutId")
+                print("💾 워크아웃 ID 저장됨: \(newValue.prefix(8))...")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "lastNotifiedWorkoutId")
+                print("💾 워크아웃 ID 초기화됨")
+            }
+        }
+    }
     
     // MARK: - Authorization
     func requestHealthKitAuthorization() {
@@ -173,36 +194,13 @@ class WorkoutDataService: ObservableObject {
     }
     
     private func syncAllWorkoutData(workouts: [HKWorkout]) {
-        // TODO: Bulk Sync API 구현 후 수정 예정
-        let group = DispatchGroup()
-        var allWorkoutData: [WorkoutDetailedData] = []
-        var syncErrors: [String] = []
+        print("📱 \(workouts.count)개 워크아웃 데이터 로드 시작...")
         
-        for (_, workout) in workouts.enumerated() {
-            group.enter()
-            
-            healthKitManager.fetchCompleteWorkoutData(for: workout) { detailedData in
-                allWorkoutData.append(detailedData)
-                
-                // 각 워크아웃 데이터를 서버에 동기화
-                self.postWorkoutData(detailedData) { success, error in
-                    if !success {
-                        syncErrors.append("워크아웃 \(workout.uuid.uuidString): \(error ?? "알 수 없는 오류")")
-                    }
-                    group.leave()
-                }
-            }
-        }
-        
-        group.notify(queue: .main) {
+        // 단순히 데이터 개수만 확인 (서버 전송 없음)
+        DispatchQueue.main.async {
             self.isInitialSyncInProgress = false
-            
-            if syncErrors.isEmpty {
-                self.syncStatus = "초기 동기화 완료: \(allWorkoutData.count)개 워크아웃"
-            } else {
-                self.syncStatus = "동기화 완료 (일부 오류: \(syncErrors.count)개)"
-                self.errorMessage = syncErrors.joined(separator: "\n")
-            }
+            self.syncStatus = "워크아웃 데이터 확인 완료: \(workouts.count)개"
+            print("✅ 초기 워크아웃 데이터 확인 완료: \(workouts.count)개")
         }
     }
     
@@ -247,122 +245,91 @@ class WorkoutDataService: ObservableObject {
         }
     }
     
-    // MARK: - Sync Data
-    func syncLatestWorkoutRoute() {
-        // 1. 최근 워크아웃 가져오기
+    // MARK: - Workout Data Check  
+    func checkLatestWorkoutData() {
+        print("📱 최근 워크아웃 데이터 확인 중...")
+        
         healthKitManager.fetchRecentRunningWorkouts(limit: 1) { [weak self] workouts in
             guard let workout = workouts.first else {
-                DispatchQueue.main.async { self?.syncStatus = "러닝 기록이 없습니다." }
+                DispatchQueue.main.async { 
+                    self?.syncStatus = "러닝 기록이 없습니다."
+                    print("⚠️ 러닝 기록이 없습니다.")
+                }
                 return
             }
             
-            // 2. 전체 워크아웃 데이터 가져오기
-            self?.healthKitManager.fetchCompleteWorkoutData(for: workout) { detailedData in
-                // 3. JSON 변환 - 지정된 형식으로
-                let payload = self?.createWorkoutPayload(from: detailedData) ?? [:]
-                
-                guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else {
-                    DispatchQueue.main.async { self?.syncStatus = "JSON 변환 실패" }
-                    return
-                }
-                
-                // 4. API POST
-                self?.postRouteData(jsonData: jsonData)
+            // 간단한 워크아웃 정보만 확인
+            DispatchQueue.main.async {
+                let duration = Int(workout.duration / 60)
+                self?.syncStatus = "최근 러닝: \(duration)분"
+                print("✅ 최근 러닝 확인: \(duration)분, \(workout.startDate)")
             }
         }
     }
     
-    // MARK: - Automatic Sync Management
+
     
-    /// 자동 동기화 시작 - 새로운 워크아웃이 추가될 때마다 자동으로 서버에 동기화
+    // MARK: - Automatic Notification Management
+    
+    /// 자동 알림 시작 - 새로운 워크아웃 완료 시 자동으로 로컬 알림 발송
     func startAutoSync() {
         guard !isAutoSyncEnabled else {
-            print("⚠️ 자동 동기화가 이미 활성화되어 있습니다.")
+            print("⚠️ 자동 알림이 이미 활성화되어 있습니다.")
             return
         }
         
-        print("🚀 운동 종료 자동 감지 시작")
-        print("   - HealthKit 권한 상태: \(isAuthorized)")
+        print("🚀 운동 완료 자동 알림 시작")
+        
+        // 기존 저장된 마지막 알림 워크아웃 ID 확인
+        if let lastId = lastSyncedWorkoutId {
+            print("📂 마지막 알림 워크아웃 ID: \(lastId.prefix(8))... (중복 방지)")
+        } else {
+            print("📂 저장된 워크아웃 기록 없음 (첫 실행)")
+        }
         
         isAutoSyncEnabled = true
         
         // HealthKit Observer 시작
         healthKitManager.startWorkoutObserver { [weak self] in
-            print("🔔 HealthKit Observer 콜백 실행됨! - 새로운 워크아웃 감지")
-            print("   - 콜백 실행 시간: \(Date())")
+            print("🔔 새로운 워크아웃 감지됨!")
             
             guard let strongSelf = self else {
-                print("❌ self가 nil이 되어 워크아웃 처리를 건너뜁니다.")
+                print("❌ WorkoutDataService 객체가 해제되어 처리를 건너뜁니다.")
                 return
             }
             
-            print("✅ self 존재 확인 완료, handleNewWorkoutDetected 호출")
             strongSelf.handleNewWorkoutDetected()
         }
         
-        // Fallback: 주기적으로 최근 워크아웃 체크 (30초마다)
-        startPeriodicWorkoutCheck()
-        
-        print("✅ 자동 감지 설정 완료")
+        print("✅ 자동 알림 시작 완료")
     }
     
-    /// 자동 동기화 중지
+    /// 개발/테스트용: 저장된 워크아웃 ID 초기화 (모든 운동에 대해 다시 알림 받고 싶을 때)
+    func clearLastNotifiedWorkoutId() {
+        guard !isProcessingWorkout else {
+            print("⚠️ 워크아웃 처리 중이므로 ID 초기화를 건너뜁니다.")
+            return
+        }
+        
+        lastSyncedWorkoutId = nil
+        print("🗑️ 저장된 워크아웃 ID 초기화 완료 - 모든 운동에 대해 알림 재활성화됨")
+    }
+    
+    /// 자동 알림 중지
     func stopAutoSync() {
         guard isAutoSyncEnabled else {
-            print("⚠️ 자동 동기화가 이미 비활성화되어 있습니다.")
+            print("⚠️ 자동 알림이 이미 비활성화되어 있습니다.")
             return
         }
         
-        print("🛑 운동 종료 자동 감지 중지")
+        print("🛑 자동 알림 중지")
         isAutoSyncEnabled = false
-        
-        // HealthKit Observer 중지
         healthKitManager.stopWorkoutObserver()
-        
-        // 주기적 체크 중지
-        stopPeriodicWorkoutCheck()
-    }
-    
-    /// Observer fallback용 주기적 워크아웃 체크 시작
-    private func startPeriodicWorkoutCheck() {
-        print("⏰ 주기적 워크아웃 체크 시작 (30초 간격)")
-        
-        periodicTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
-            print("🔄 주기적 워크아웃 체크 실행...")
-            self?.handleNewWorkoutDetected()
-        }
-    }
-    
-    /// 주기적 워크아웃 체크 중지
-    private func stopPeriodicWorkoutCheck() {
-        periodicTimer?.invalidate()
-        periodicTimer = nil
-        print("⏰ 주기적 워크아웃 체크 중지")
-    }
-    
-    /// 수동으로 최근 워크아웃 동기화 테스트 (디버깅용)
-    func testManualWorkoutSync() {
-        print("🧪 수동 워크아웃 동기화 테스트 시작...")
-        print("   - 현재 시간: \(Date())")
-        print("   - 권한 상태: \(isAuthorized)")
-        print("   - 자동 감지 활성화: \(isAutoSyncEnabled)")
-        
-        // 권한 확인
-        guard isAuthorized else {
-            print("❌ HealthKit 권한이 필요합니다.")
-            return
-        }
-        
-        handleNewWorkoutDetected()
     }
     
     /// 새로운 워크아웃이 감지되었을 때 처리하는 메서드
     private func handleNewWorkoutDetected() {
-        print("📱 handleNewWorkoutDetected 실행됨")
-        print("   - 현재 시간: \(Date())")
-        print("   - 권한 상태: \(isAuthorized)")
-        print("   - 초기 동기화 진행 중: \(isInitialSyncInProgress)")
-        print("   - 상세 데이터 로딩 중: \(isLoadingDetailedData)")
+        print("📱 워크아웃 데이터 처리 시작")
         
         // 권한이 있는지 먼저 확인
         guard isAuthorized else {
@@ -373,23 +340,39 @@ class WorkoutDataService: ObservableObject {
         // 이미 동기화가 진행 중이면 건너뛰기
         guard !isInitialSyncInProgress && !isLoadingDetailedData else {
             print("⚠️ 다른 동기화가 진행 중이므로 건너뜁니다.")
-            print("   - 초기 동기화 중: \(isInitialSyncInProgress)")
-            print("   - 상세 데이터 로딩 중: \(isLoadingDetailedData)")
             return
         }
         
-        print("✅ 조건 확인 완료, 최근 워크아웃 확인 시작")
+        // 🔥 동시성 제어: 이미 워크아웃 처리 중이면 건너뛰기
+        guard !isProcessingWorkout else {
+            print("⚠️ 현재 워크아웃 처리 중입니다. 중복 요청 무시됨.")
+            return
+        }
         
-        // 최근 워크아웃을 가져와서 동기화
-        syncRecentWorkoutIfNew()
+        // 🔥 Debouncing: 너무 빠른 연속 호출 방지 (3초 내)
+        let now = Date()
+        if let lastTime = lastProcessedTime, now.timeIntervalSince(lastTime) < 3.0 {
+            print("⚠️ 너무 빠른 연속 호출 - \(String(format: "%.1f", now.timeIntervalSince(lastTime)))초 전에 처리됨")
+            return
+        }
+        
+        lastProcessedTime = now
+        
+        // 최근 워크아웃을 확인해서 알림 발송
+        checkRecentWorkoutForNotification()
     }
     
-    /// 최근 워크아웃이 새로운 것인지 확인하고 JSON 형태로 동기화
-    private func syncRecentWorkoutIfNew() {
-        print("🔍 최근 워크아웃 데이터 확인 중...")
+    /// 최근 워크아웃이 새로운 것인지 확인하고 로컬 알림 발송
+    private func checkRecentWorkoutForNotification() {
+        // 🔥 처리 시작
+        isProcessingWorkout = true
         
         healthKitManager.fetchRecentRunningWorkouts(limit: 1) { [weak self] workouts in
-            print("📋 HealthKit에서 워크아웃 조회 결과: \(workouts.count)개")
+            // 안전장치: self가 해제된 경우 처리 플래그 해제
+            defer {
+                self?.isProcessingWorkout = false
+                self?.processingWorkoutId = nil
+            }
             
             guard let workout = workouts.first else {
                 print("⚠️ 최근 러닝 워크아웃이 없습니다.")
@@ -397,56 +380,177 @@ class WorkoutDataService: ObservableObject {
             }
             
             let workoutId = workout.uuid.uuidString
-            print("🆔 발견된 워크아웃 ID: \(workoutId.prefix(8))...")
-            print("⏰ 운동 시간: \(workout.startDate) ~ \(workout.endDate)")
+            print("🏃‍♂️ 워크아웃 확인 중: \(workoutId.prefix(8))...")
             
-            // 이미 동기화한 워크아웃인지 확인
-            if let lastSyncedId = self?.lastSyncedWorkoutId, lastSyncedId == workoutId {
-                print("⚠️ 이미 동기화된 워크아웃입니다: \(workoutId.prefix(8))...")
+            // 🔥 같은 워크아웃이 이미 처리 중인지 확인
+            if let currentProcessingId = self?.processingWorkoutId, currentProcessingId == workoutId {
+                print("⚠️ 같은 워크아웃이 이미 처리 중입니다. (ID: \(workoutId.prefix(8))...)")
                 return
             }
             
-            print("🏃‍♂️ 새로운 워크아웃 발견! 서버 전송 시작")
+            // 현재 처리 중인 워크아웃 ID 설정
+            self?.processingWorkoutId = workoutId
             
-            // 워크아웃 데이터 가져오기 및 JSON으로 동기화
+            // 🔥 중요: 운동이 실제로 완료되었는지 확인
+            guard self?.isWorkoutCompleted(workout) == true else {
+                print("⚠️ 운동이 아직 진행 중입니다. 완료될 때까지 대기...")
+                return
+            }
+            
+            print("✅ 운동 완료 확인됨!")
+            
+            // 이미 알림을 보낸 워크아웃인지 확인
+            if let lastNotifiedId = self?.lastSyncedWorkoutId, lastNotifiedId == workoutId {
+                print("⚠️ 이미 알림을 보낸 워크아웃입니다. (ID: \(workoutId.prefix(8))...)")
+                return
+            }
+            
+            print("🆕 새로운 워크아웃 발견! 알림 발송 시작...")
+            
+            // 워크아웃 데이터 가져오기 및 로컬 알림 발송
             self?.healthKitManager.fetchCompleteWorkoutData(for: workout) { detailedData in
-                print("📊 상세 워크아웃 데이터 수집 완료")
-                
-                // 전송할 데이터 로깅
-                self?.logWorkoutDataForAutoSync(detailedData)
-                
-                // 서버로 JSON 데이터 전송
-                print("🚀 http://127.0.0.1/syncworkout 으로 데이터 전송 시작...")
-                
-                self?.postWorkoutData(detailedData) { [weak self] success, error in
-                    DispatchQueue.main.async {
-                        if success {
-                            self?.lastSyncedWorkoutId = workoutId
-                            print("✅ 운동 데이터 자동 전송 완료!")
-                            print("🎉 서버 전송 성공 시간: \(Date())")
-                        } else {
-                            print("❌ 운동 데이터 자동 전송 실패: \(error ?? "알 수 없는 오류")")
-                        }
-                    }
+                // 데이터 fetch가 성공한 경우에만 처리
+                guard detailedData.workout.uuid == workout.uuid else {
+                    print("❌ 워크아웃 데이터 불일치 - 알림 건너뜀")
+                    return
                 }
+                
+                // 중복 방지를 위해 workoutId 저장 (성공한 경우에만)
+                self?.lastSyncedWorkoutId = workoutId
+                
+                // 운동 데이터 로깅
+                self?.logWorkoutDataForLocalNotification(detailedData)
+                
+                // 바로 로컬 알림 발송
+                self?.sendLocalNotificationForWorkoutComplete(workoutData: detailedData)
             }
         }
     }
     
-    /// 운동 종료 후 자동 전송되는 데이터 로깅 (간단 버전)
-    private func logWorkoutDataForAutoSync(_ data: WorkoutDetailedData) {
-        print("📤 서버로 전송되는 운동 데이터:")
-        print("   🏃‍♂️ 운동: \(String(format: "%.2f", data.totalDistance/1000.0))km, \(Int(data.duration/60))분")
-        print("   💓 심박수: 평균 \(Int(data.averageHeartRate))bpm")
-        print("   🔥 칼로리: \(Int(data.totalEnergyBurned))kcal")
-        print("   🗺️ GPS: \(data.routePoints.count)개 위치점")
-        print("   👟 걸음: \(data.steps.reduce(0) { $0 + Int($1.quantity.doubleValue(for: .count())) })보")
+    /// 워크아웃이 실제로 완료되었는지 확인
+    private func isWorkoutCompleted(_ workout: HKWorkout) -> Bool {
+        let now = Date()
+        let workoutEndDate = workout.endDate
+        let workoutStartDate = workout.startDate
         
-        // JSON 크기 정보
-        let payload = createWorkoutPayload(from: data)
-        if let jsonData = try? JSONSerialization.data(withJSONObject: payload) {
-            let sizeKB = Double(jsonData.count) / 1024.0
-            print("   📊 전송 데이터 크기: \(String(format: "%.1f", sizeKB))KB")
+        // 기본 검증: 운동 시간이 최소 5초 이상이어야 함  
+        guard workout.duration >= 5.0 else {
+            print("   ❌ 운동 시간이 너무 짧습니다: \(Int(workout.duration))초")
+            return false
+        }
+        
+        // 시작/종료 시간 검증
+        guard workoutEndDate > workoutStartDate else {
+            print("   ❌ 운동 종료 시간이 시작 시간보다 이릅니다")
+            return false
+        }
+        
+        // 운동이 현재 시간보다 최소 0.5초 전에 완료되었는지 확인
+        // (HealthKit 데이터 처리를 위한 최소 버퍼)
+        let completionBufferTime: TimeInterval = 0.5
+        let timeSinceWorkoutEnded = now.timeIntervalSince(workoutEndDate)
+        
+        guard timeSinceWorkoutEnded >= completionBufferTime else {
+            print("   ⏰ 운동이 너무 최근에 완료됨: \(String(format: "%.1f", timeSinceWorkoutEnded))초 전")
+            return false
+        }
+        
+        // 운동이 24시간 이내에 완료되었는지 확인 (너무 오래된 데이터 제외)
+        let maxWorkoutAge: TimeInterval = 24 * 60 * 60 // 24시간
+        guard timeSinceWorkoutEnded <= maxWorkoutAge else {
+            print("   ❌ 운동 데이터가 너무 오래됨: \(Int(timeSinceWorkoutEnded / 3600))시간 전")
+            return false
+        }
+        
+        // 모든 조건 통과
+        let durationMinutes = Int(workout.duration / 60)
+        let durationSeconds = Int(workout.duration.truncatingRemainder(dividingBy: 60))
+        print("   ✅ 운동 완료 확인: \(durationMinutes)분 \(durationSeconds)초, \(String(format: "%.1f", timeSinceWorkoutEnded))초 전 종료")
+        
+        return true
+    }
+    
+        /// 운동 완료 데이터 로깅 (간소화 버전)
+    private func logWorkoutDataForLocalNotification(_ data: WorkoutDetailedData) {
+        let distanceKm = String(format: "%.2f", data.totalDistance/1000.0)
+        let durationMin = Int(data.duration/60)
+        let calories = Int(data.totalEnergyBurned)
+        print("📱 운동 완료: \(distanceKm)km, \(durationMin)분, \(calories)kcal")
+    }
+    
+    /// 운동 완료 시 로컬 알림 전송
+    private func sendLocalNotificationForWorkoutComplete(workoutData: WorkoutDetailedData) {
+        // 앱 상태 확인
+        let appState = UIApplication.shared.applicationState
+        let stateString = appState == .background ? "백그라운드" : (appState == .active ? "포그라운드" : "비활성")
+        print("🔔 운동 완료 로컬 알림 전송 중... (앱 상태: \(stateString))")
+        
+        // 운동 정보 요약
+        let distanceKm = workoutData.totalDistance / 1000.0
+        let durationMinutes = Int(workoutData.duration / 60)
+        let calories = Int(workoutData.totalEnergyBurned)
+        
+        let content = UNMutableNotificationContent()
+        content.title = "🏃‍♂️ 운동 완료!"
+        
+        // 운동 데이터에 따른 개인화된 메시지
+        if distanceKm > 0.1 {
+            content.body = "\(String(format: "%.1f", distanceKm))km, \(durationMinutes)분 러닝을 완료했습니다. 수고하셨습니다!"
+        } else {
+            content.body = "\(durationMinutes)분 운동을 완료했습니다. 수고하셨습니다!"
+        }
+        
+        content.sound = .default
+        content.badge = NSNumber(value: 1)
+        
+        // 알림 데이터
+        content.userInfo = [
+            "type": "workout_complete",
+            "workoutId": workoutData.workout.uuid.uuidString,
+            "distance": distanceKm,
+            "duration": workoutData.duration,
+            "calories": calories,
+            "isLocal": true
+        ]
+        
+        // 즉시 알림 표시
+        let request = UNNotificationRequest(
+            identifier: "workout_complete_\(workoutData.workout.uuid.uuidString)",
+            content: content,
+            trigger: nil
+        )
+        
+        // 백그라운드에서도 확실한 알림 전송을 위한 Background Task 시작
+        var backgroundTask: UIBackgroundTaskIdentifier = .invalid
+        
+        if appState == .background {
+            print("🌙 백그라운드 상태 - Background Task로 알림 전송 보장")
+            // 중복 Background Task 방지를 위해 고유 식별자 사용
+            let taskName = "WorkoutNotification_\(workoutData.workout.uuid.uuidString.prefix(8))"
+            backgroundTask = UIApplication.shared.beginBackgroundTask(withName: taskName) {
+                // 시간 초과 시 정리
+                if backgroundTask != .invalid {
+                    UIApplication.shared.endBackgroundTask(backgroundTask)
+                    backgroundTask = .invalid
+                }
+            }
+        }
+        
+        UNUserNotificationCenter.current().add(request) { error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    print("❌ 로컬 알림 전송 실패: \(error.localizedDescription)")
+                } else {
+                    let appStateText = appState == .background ? "백그라운드" : "포그라운드"
+                    print("✅ 운동 완료 알림 전송 성공! (\(appStateText))")
+                }
+                
+                // Background Task 종료
+                if backgroundTask != .invalid {
+                    UIApplication.shared.endBackgroundTask(backgroundTask)
+                    backgroundTask = .invalid
+                }
+            }
         }
     }
     
@@ -455,79 +559,15 @@ class WorkoutDataService: ObservableObject {
         stopAutoSync()
     }
     
-    // MARK: - Helper Methods
-    private func createWorkoutPayload(from workoutData: WorkoutDetailedData) -> [String: Any] {
-        return [
-            "workoutId": workoutData.workout.uuid.uuidString,
-            "startTime": ISO8601DateFormatter().string(from: workoutData.startDate),
-            "endTime": ISO8601DateFormatter().string(from: workoutData.endDate),
-            "workoutType": "running",
-            "distance": workoutData.totalDistance,
-            "duration": Int(workoutData.duration),
-            "calories": Int(workoutData.totalEnergyBurned),
-            "avgHeartRate": Int(workoutData.averageHeartRate),
-            "route": workoutData.routePoints.map { point in
-                [
-                    "latitude": point.latitude,
-                    "longitude": point.longitude,
-                    "timestamp": ISO8601DateFormatter().string(from: point.timestamp)
-                ]
-            }
-        ]
-    }
+
     
-    private func postWorkoutData(_ workoutData: WorkoutDetailedData, completion: @escaping (Bool, String?) -> Void) {
-        // 워크아웃 데이터를 서버 형식으로 변환
-        let payload = createWorkoutPayload(from: workoutData)
-        
-        guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else {
-            completion(false, "JSON 변환 실패")
-            return
-        }
-        
-        var request = URLRequest(url: URL(string: "http://127.0.0.1/syncworkout")!)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = jsonData
-        
-        let task = URLSession.shared.dataTask(with: request) { data, response, error in
-            DispatchQueue.main.async {
-                if let error = error {
-                    completion(false, "네트워크 오류: \(error.localizedDescription)")
-                    return
-                }
-                
-                if let httpResponse = response as? HTTPURLResponse {
-                    if (200...299).contains(httpResponse.statusCode) {
-                        completion(true, nil)
-                    } else {
-                        completion(false, "서버 응답 오류 (\(httpResponse.statusCode))")
-                    }
-                } else {
-                    completion(false, "알 수 없는 응답")
-                }
-            }
-        }
-        task.resume()
-    }
+    // MARK: - Helper Methods - Time Formatting
     
-    private func postRouteData(jsonData: Data) {
-        var request = URLRequest(url: URL(string: "http://127.0.0.1/syncdata")!)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = jsonData
-        
-        let task = URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
-            DispatchQueue.main.async {
-                if let error = error {
-                    self?.syncStatus = "동기화 실패: \(error.localizedDescription)"
-                } else if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
-                    self?.syncStatus = "동기화 실패: 서버 응답 \(httpResponse.statusCode)"
-                } else {
-                    self?.syncStatus = "동기화 성공"
-                }
-            }
-        }
-        task.resume()
+    /// 한국 시간으로 포맷팅
+    private func formatKoreanTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        formatter.timeZone = TimeZone(identifier: "Asia/Seoul")
+        return formatter.string(from: date) + " (KST)"
     }
 } 
