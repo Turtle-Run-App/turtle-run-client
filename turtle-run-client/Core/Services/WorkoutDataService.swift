@@ -194,10 +194,28 @@ class WorkoutDataService: ObservableObject {
     }
     
     private func syncAllWorkoutData(workouts: [HKWorkout]) {
-        print("📱 \(workouts.count)개 워크아웃 데이터 로드 시작...")
+        // TODO: Bulk Sync API 구현 후 수정 예정
+        let group = DispatchGroup()
+        var allWorkoutData: [WorkoutDetailedData] = []
+        var syncErrors: [String] = []
         
-        // 단순히 데이터 개수만 확인 (서버 전송 없음)
-        DispatchQueue.main.async {
+        for (_, workout) in workouts.enumerated() {
+            group.enter()
+            
+            healthKitManager.fetchCompleteWorkoutData(for: workout) { detailedData in
+                allWorkoutData.append(detailedData)
+                
+                // 각 워크아웃 데이터를 서버에 동기화
+                self.postWorkoutData(detailedData) { success, error in
+                    if !success {
+                        syncErrors.append("워크아웃 \(workout.uuid.uuidString): \(error ?? "알 수 없는 오류")")
+                    }
+                    group.leave()
+                }
+            }
+        }
+        
+        group.notify(queue: .main) {
             self.isInitialSyncInProgress = false
             self.syncStatus = "워크아웃 데이터 확인 완료: \(workouts.count)개"
             print("✅ 초기 워크아웃 데이터 확인 완료: \(workouts.count)개")
