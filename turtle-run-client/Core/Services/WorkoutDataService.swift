@@ -71,7 +71,7 @@ class WorkoutDataService: ObservableObject {
         var allWorkoutData: [WorkoutDetailedData] = []
         var syncErrors: [String] = []
         
-        for (index, workout) in workouts.enumerated() {
+        for (_, workout) in workouts.enumerated() {
             group.enter()
             
             healthKitManager.fetchCompleteWorkoutData(for: workout) { detailedData in
