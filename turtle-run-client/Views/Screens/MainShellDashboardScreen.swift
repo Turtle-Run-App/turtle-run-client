@@ -30,7 +30,7 @@ struct MainShellDashboardScreen: View {
                     Spacer()
                     testNotificationButton
                         .padding(.trailing, 20)
-                        .padding(.bottom, 100)
+                        .padding(.bottom, 170)
                 }
             }
         }
