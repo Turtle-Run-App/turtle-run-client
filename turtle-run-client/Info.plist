@@ -22,8 +22,6 @@
     <true />
     <key>UILaunchStoryboardName</key>
     <string>LaunchScreen</string>
-    <key>UIMainStoryboardFile</key>
-    <string>Main</string>
     <key>NSHealthShareUsageDescription</key>
     <string>이 앱은 러닝 기록 등 건강 데이터를 연동하여 Shell 및 통계 기능을 제공합니다.</string>
     <key>NSHealthUpdateUsageDescription</key>
