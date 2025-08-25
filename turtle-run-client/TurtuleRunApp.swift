@@ -4,6 +4,8 @@ import UserNotifications
 
 @main
 struct TurtleRunApp: App {
+    // @StateObject private var notificationManager = NotificationManager.shared
+    
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var workoutDataService = WorkoutDataService()
     @StateObject private var pushNotificationManager = PushNotificationManager.shared
@@ -30,6 +32,13 @@ struct TurtleRunApp: App {
                 .onAppear {
                     setupPushNotifications()
                 }
+                // .environmentObject(notificationManager)
+                // .onAppear {
+                //     // 앱 시작 시 알림 권한 요청
+                //     Task {
+                //         await notificationManager.requestPermission()
+                //     }
+                // }
         }
         .modelContainer(sharedModelContainer)
         .onChange(of: scenePhase) { oldPhase, newPhase in

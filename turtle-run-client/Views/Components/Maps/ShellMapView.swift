@@ -94,8 +94,8 @@ struct ShellMapView: UIViewRepresentable {
                     // Shell인 경우 (점유된 Grid Cell) - Density에 따른 색상 강도 적용
                     let densityColor = tribe.colorWithDensity(density)
                     renderer.fillColor = UIColor(densityColor)
-                    renderer.strokeColor = UIColor(tribe.color) // 테두리는 기본 색상
-                    renderer.lineWidth = 2.5
+                    renderer.strokeColor = UIColor.systemGray.withAlphaComponent(0.2) // 일반 Grid와 동일한 테두리
+                    renderer.lineWidth = 0.8 // 일반 Grid와 동일한 두께
                 } else {
                     // 일반 Grid Cell인 경우 - 테두리만 표시
                     renderer.fillColor = UIColor.clear
