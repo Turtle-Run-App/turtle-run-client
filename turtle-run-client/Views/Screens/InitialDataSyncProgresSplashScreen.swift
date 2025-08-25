@@ -1,17 +1,30 @@
 import SwiftUI
 
 struct InitialDataSyncProgresSplashScreen: View {
+    @StateObject private var workoutService = WorkoutDataService()
     @State private var currentMessageIndex = 0
-    @State private var progress: Double = 0
     @State private var isActive = true
     
-    private let messages = [
-        (title: "러닝 기록 살펴보는 중...", message: "당신이 뛰어온 길을 하나씩 살펴보고 있어요"),
-        (title: "Shell 만들기 시작!", message: "당신이 뛰어온 길이 Shell로 변해가요"),
-        (title: "당신에게 맞는 종족을 찾는 중...", message: "Shell 특성에 맞는 최적의 종족을 찾고 있어요"),
-        (title: "Shell 키우기 준비 중...", message: "앞으로 뛸 때마다 Shell이 조금씩 커질 거예요"),
-        (title: "거의 다 왔어요!", message: "곧 TurtleRun의 재미있는 세계로 들어갈 수 있어요")
-    ]
+    let onSyncComplete: () -> Void
+    
+    // 실제 동기화 상태에 따른 메시지 계산
+    private var currentMessage: (title: String, message: String) {
+        if workoutService.isThreeMonthSyncInProgress {
+            if workoutService.threeMonthSyncProgress < 0.2 {
+                return (title: "HealthKit 권한 확인 중...", message: "앱에서 건강 데이터에 접근할 수 있도록 권한을 확인하고 있어요")
+            } else if workoutService.threeMonthSyncProgress < 0.4 {
+                return (title: "3개월 러닝 기록 찾는 중...", message: "최근 3개월간의 모든 러닝 기록을 찾고 있어요")
+            } else if workoutService.threeMonthSyncProgress < 0.8 {
+                return (title: "워크아웃 데이터 수집 중...", message: "각 워크아웃의 상세한 데이터를 수집하고 있어요")
+            } else {
+                return (title: "서버에 동기화 중...", message: "수집한 데이터를 서버에 안전하게 저장하고 있어요")
+            }
+        } else if workoutService.threeMonthSyncProgress >= 1.0 {
+            return (title: "동기화 완료!", message: "모든 러닝 데이터가 성공적으로 동기화되었어요")
+        } else {
+            return (title: "동기화 준비 중...", message: "3개월간의 러닝 데이터 동기화를 시작합니다")
+        }
+    }
     
     var body: some View {
         ZStack {
@@ -48,8 +61,8 @@ struct InitialDataSyncProgresSplashScreen: View {
                 
                 // Message Container
                 MessageContainer(
-                    title: messages[currentMessageIndex].title,
-                    message: messages[currentMessageIndex].message,
+                    title: currentMessage.title,
+                    message: currentMessage.message,
                     isActive: isActive
                 )
                 
@@ -65,7 +78,7 @@ struct InitialDataSyncProgresSplashScreen: View {
                             // Progress
                             RoundedRectangle(cornerRadius: 2)
                                 .fill(Color.turtleRunTheme.accentColor)
-                                .frame(width: geometry.size.width * progress, height: 4)
+                                .frame(width: geometry.size.width * workoutService.threeMonthSyncProgress, height: 4)
                         }
                     }
                     .frame(height: 4)
@@ -74,37 +87,21 @@ struct InitialDataSyncProgresSplashScreen: View {
             }
         }
         .onAppear {
-            startProgressAnimation()
+            startThreeMonthSync()
         }
-    }
-    
-    private func startProgressAnimation() {
-        // Progress bar animation
-        withAnimation(.linear(duration: 18)) {
-            progress = 1.0
-        }
-        
-        // Message updates
-        for index in 0..<messages.count {
-            DispatchQueue.main.asyncAfter(deadline: .now() + Double(index) * 3) {
-                withAnimation {
-                    isActive = false
-                }
-                
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    currentMessageIndex = index
-                    withAnimation {
-                        isActive = true
-                    }
+        .onChange(of: workoutService.threeMonthSyncProgress) { progress in
+            if progress >= 1.0 && !workoutService.isThreeMonthSyncInProgress {
+                // 동기화 완료 후 2초 대기 후 콜백 호출
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    onSyncComplete()
                 }
             }
         }
-        
-        // Navigate to next screen after completion
-        DispatchQueue.main.asyncAfter(deadline: .now() + 18) {
-            // TODO: Navigate to next screen
-            print("Navigation to next screen")
-        }
+    }
+    
+    private func startThreeMonthSync() {
+        // 실제 3개월 HealthKit 데이터 동기화 시작
+        workoutService.syncThreeMonthWorkoutData()
     }
 }
 
@@ -137,5 +134,7 @@ struct Polygon: Shape {
 }
 
 #Preview {
-    InitialDataSyncProgresSplashScreen()
+    InitialDataSyncProgresSplashScreen(onSyncComplete: {
+        print("Sync completed in preview")
+    })
 }

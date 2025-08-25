@@ -5,6 +5,7 @@ struct InitialDataSyncAllowScreen: View {
     @State private var isDataSyncAllowed = false
     @State private var watchSyncProgress: Double = 0
     @State private var dataSyncProgress: Double = 0
+    @State private var showProgressScreen = false
     
     var body: some View {
         ZStack {
@@ -74,6 +75,14 @@ struct InitialDataSyncAllowScreen: View {
                 
             }
         }
+        .fullScreenCover(isPresented: $showProgressScreen) {
+            InitialDataSyncProgresSplashScreen(onSyncComplete: {
+                // 동기화 완료 후 처리
+                showProgressScreen = false
+                isDataSyncAllowed = true
+                dataSyncProgress = 1.0
+            })
+        }
     }
     
     private func handleWatchSync() {
@@ -87,13 +96,8 @@ struct InitialDataSyncAllowScreen: View {
     }
     
     private func handleDataSync() {
-        // Simulate data sync progress
-        withAnimation(.easeInOut(duration: 2)) {
-            dataSyncProgress = 1.0
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            isDataSyncAllowed = true
-        }
+        // 즉시 ProgressSplashScreen으로 전환
+        showProgressScreen = true
     }
     
     private func handleNext() {
