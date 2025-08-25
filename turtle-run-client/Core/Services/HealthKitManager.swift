@@ -1,10 +1,15 @@
 import Foundation
 import HealthKit
 import CoreLocation
+import UIKit
 
 class HealthKitManager {
     static let shared = HealthKitManager()
     private let healthStore = HKHealthStore()
+    
+    // Observer query 관리를 위한 프로퍼티
+    private var workoutObserverQuery: HKObserverQuery?
+    private var workoutObserverCallback: (() -> Void)?
     
     private init() {}
     
@@ -22,6 +27,111 @@ class HealthKitManager {
             HKQuantityType.quantityType(forIdentifier: .distanceCycling)!
         ]
         healthStore.requestAuthorization(toShare: [], read: typesToRead, completion: completion)
+    }
+    
+    // MARK: - Observer Pattern for Workout Changes
+    
+    /// 새로운 워크아웃 데이터 추가를 감지하는 Observer 시작
+    func startWorkoutObserver(callback: @escaping () -> Void) {
+        print("🎯 HealthKit Observer 설정 시작...")
+        
+        // 기존 observer가 있다면 정지
+        if workoutObserverQuery != nil {
+            stopWorkoutObserver()
+        }
+        
+        // 콜백 등록
+        self.workoutObserverCallback = callback
+        
+        // 콜백 등록 확인
+        guard workoutObserverCallback != nil else {
+            print("❌ 콜백 함수 등록 실패!")
+            return
+        }
+        
+        let workoutType = HKObjectType.workoutType()
+        workoutObserverQuery = HKObserverQuery(sampleType: workoutType, predicate: nil) { [weak self] query, completionHandler, error in
+            let appState = UIApplication.shared.applicationState
+            let stateString = appState == .background ? "백그라운드" : (appState == .active ? "포그라운드" : "비활성")
+            print("🔔 HealthKit Observer 트리거됨!")
+            print("   - 시간: \(self?.formatKoreanTime(Date()) ?? "알 수 없음")")
+            print("   - 앱 상태: \(stateString)")
+            
+            if let error = error {
+                print("❌ HealthKit Observer 오류: \(error.localizedDescription)")
+                completionHandler()
+                return
+            }
+            
+            // 메인 쓰레드에서 콜백 실행
+            DispatchQueue.main.async {
+                if let callback = self?.workoutObserverCallback {
+                    callback()
+                } else {
+                    print("❌ 콜백 함수가 nil입니다! WorkoutDataService 연결 문제")
+                }
+            }
+            
+            // HealthKit에 처리 완료를 알림
+            completionHandler()
+        }
+        
+        // Observer 시작
+        if let observerQuery = workoutObserverQuery {
+            healthStore.execute(observerQuery)
+            print("✅ HealthKit Observer 등록 완료!")
+        } else {
+            print("❌ Observer Query 생성 실패!")
+            return
+        }
+        
+        // 백그라운드 딜리버리 활성화
+        enableBackgroundDelivery()
+    }
+    
+    /// 워크아웃 Observer 중지
+    func stopWorkoutObserver() {
+        if let observerQuery = workoutObserverQuery {
+            healthStore.stop(observerQuery)
+            print("🛑 HealthKit Observer 중지됨")
+        }
+        workoutObserverQuery = nil
+        workoutObserverCallback = nil
+        
+        // 백그라운드 딜리버리 비활성화
+        disableBackgroundDelivery()
+    }
+    
+    /// 백그라운드에서도 HealthKit 데이터 변경사항을 감지할 수 있도록 설정
+    private func enableBackgroundDelivery() {
+        let workoutType = HKObjectType.workoutType()
+        
+        print("🌙 백그라운드 딜리버리 활성화 시도...")
+        
+        healthStore.enableBackgroundDelivery(for: workoutType, frequency: .immediate) { success, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    print("❌ 백그라운드 딜리버리 활성화 실패: \(error.localizedDescription)")
+                } else if success {
+                    print("✅ 백그라운드 딜리버리 활성화 성공")
+                } else {
+                    print("⚠️ 백그라운드 딜리버리 활성화 실패 (이유 불명)")
+                }
+            }
+        }
+    }
+    
+    /// 백그라운드 딜리버리 비활성화
+    private func disableBackgroundDelivery() {
+        let workoutType = HKObjectType.workoutType()
+        
+        healthStore.disableBackgroundDelivery(for: workoutType) { success, error in
+            if let error = error {
+                print("❌ 백그라운드 딜리버리 비활성화 실패: \(error.localizedDescription)")
+            } else if success {
+                print("✅ 백그라운드 딜리버리 비활성화 성공")
+            }
+        }
     }
     
     // 최근 러닝 워크아웃 가져오기
@@ -76,6 +186,16 @@ class HealthKitManager {
         }
         
         healthStore.execute(query)
+    }
+    
+    // MARK: - Helper Methods
+    
+    /// 한국 시간으로 포맷팅
+    private func formatKoreanTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        formatter.timeZone = TimeZone(identifier: "Asia/Seoul")
+        return formatter.string(from: date) + " (KST)"
     }
     
     // 워크아웃 내 심박수 샘플 가져오기
