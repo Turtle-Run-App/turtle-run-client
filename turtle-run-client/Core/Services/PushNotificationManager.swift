@@ -197,6 +197,40 @@ class PushNotificationManager: NSObject, ObservableObject {
     }
 }
 
+// MARK: - UNUserNotificationCenterDelegate
+extension PushNotificationManager: UNUserNotificationCenterDelegate {
+    
+    /// 앱이 포그라운드에 있을 때 알림 수신
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        let options = handleForegroundNotification(notification)
+        completionHandler(options)
+    }
+    
+    /// 알림 상호작용 처리 (탭, 액션 등)
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        handleNotificationResponse(response)
+        
+        // UI 업데이트를 위한 추가 처리
+        let userInfo = response.notification.request.content.userInfo
+        if let type = userInfo["type"] as? String,
+           (type == "sync_complete" || type == "shell_sync_completed") {
+            DispatchQueue.main.async {
+                self.pendingNotificationResponse = response
+            }
+        }
+        
+        completionHandler()
+    }
+}
+
 // MARK: - Private Implementation
 private extension PushNotificationManager {
     
@@ -276,41 +310,6 @@ private extension PushNotificationManager {
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
         formatter.timeZone = TimeZone(identifier: "Asia/Seoul")
         return formatter.string(from: date) + " (KST)"
-    }
-}
-
-// MARK: - UNUserNotificationCenterDelegate
-
-extension PushNotificationManager: UNUserNotificationCenterDelegate {
-    
-    /// 앱이 포그라운드에 있을 때 알림 수신
-    func userNotificationCenter(
-        _ center: UNUserNotificationCenter,
-        willPresent notification: UNNotification,
-        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
-    ) {
-        let options = handleForegroundNotification(notification)
-        completionHandler(options)
-    }
-    
-    /// 알림 상호작용 처리 (탭, 액션 등)
-    func userNotificationCenter(
-        _ center: UNUserNotificationCenter,
-        didReceive response: UNNotificationResponse,
-        withCompletionHandler completionHandler: @escaping () -> Void
-    ) {
-        handleNotificationResponse(response)
-        
-        // UI 업데이트를 위한 추가 처리
-        let userInfo = response.notification.request.content.userInfo
-        if let type = userInfo["type"] as? String,
-           (type == "sync_complete" || type == "shell_sync_completed") {
-            DispatchQueue.main.async {
-                self.pendingNotificationResponse = response
-            }
-        }
-        
-        completionHandler()
     }
 }
 
