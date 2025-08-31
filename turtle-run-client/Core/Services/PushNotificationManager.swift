@@ -16,12 +16,7 @@ class PushNotificationManager: NSObject, ObservableObject {
         setupNotificationCenter()
     }
     
-    // MARK: - Setup
-    private func setupNotificationCenter() {
-        UNUserNotificationCenter.current().delegate = self
-    }
-    
-    // MARK: - Notification Authorization
+    // MARK: - Public Interface
     
     /// 알림 권한 요청 (async/await 방식)
     func requestPermission() async -> Bool {
@@ -65,13 +60,6 @@ class PushNotificationManager: NSObject, ObservableObject {
                     }
                 }
             }
-        }
-    }
-    
-    /// Push 알림 등록
-    private func registerForPushNotifications() {
-        DispatchQueue.main.async {
-            UIApplication.shared.registerForRemoteNotifications()
         }
     }
     
@@ -134,35 +122,6 @@ class PushNotificationManager: NSObject, ObservableObject {
         }
     }
     
-    // MARK: - Sync Complete Notification Handling
-    
-    /// Sync 완료 알림 처리 로직
-    private func handleSyncCompleteNotification(_ userInfo: [AnyHashable: Any]) {
-        print("🏃‍♂️ 운동 데이터 동기화 완료 알림 처리")
-        
-        // 추가적인 UI 업데이트나 데이터 새로고침 로직
-        NotificationCenter.default.post(
-            name: NSNotification.Name("WorkoutSyncCompleted"),
-            object: nil,
-            userInfo: userInfo
-        )
-    }
-    
-    /// Sync 완료 알림 탭 시 특정 화면으로 이동
-    private func handleSyncCompleteNotificationTap(_ userInfo: [AnyHashable: Any]) {
-        print("📊 운동 데이터 화면으로 이동 예정...")
-        
-        // UI 업데이트를 위한 pendingNotificationResponse 설정
-        // 실제 알림 응답이 있을 때만 처리하므로 임시 생성 제거
-        
-        // NavigationManager나 Router를 통한 화면 이동
-        NotificationCenter.default.post(
-            name: NSNotification.Name("NavigateToWorkoutStats"),
-            object: nil,
-            userInfo: userInfo
-        )
-    }
-    
     // MARK: - Local Notification Scheduling
     
     /// Shell 동기화 완료 알림 스케줄링
@@ -220,7 +179,65 @@ class PushNotificationManager: NSObject, ObservableObject {
         }
     }
     
-    private func createAndScheduleTestNotification() {
+    /// 모든 알림 정리
+    func clearAllNotifications() {
+        UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
+        UNUserNotificationCenter.current().removeAllDeliveredNotifications()
+        
+        // iOS 16+ 호환성을 위한 배지 숫자 초기화
+        if #available(iOS 16.0, *) {
+            UNUserNotificationCenter.current().setBadgeCount(0) { error in
+                if let error = error {
+                    print("❌ 배지 초기화 실패: \(error)")
+                }
+            }
+        } else {
+            UIApplication.shared.applicationIconBadgeNumber = 0
+        }
+    }
+}
+
+// MARK: - Private Implementation
+private extension PushNotificationManager {
+    
+    /// 알림 센터 델리게이트 설정
+    func setupNotificationCenter() {
+        UNUserNotificationCenter.current().delegate = self
+    }
+    
+    /// Push 알림 등록
+    func registerForPushNotifications() {
+        DispatchQueue.main.async {
+            UIApplication.shared.registerForRemoteNotifications()
+        }
+    }
+    
+    /// Sync 완료 알림 처리 로직
+    func handleSyncCompleteNotification(_ userInfo: [AnyHashable: Any]) {
+        print("🏃‍♂️ 운동 데이터 동기화 완료 알림 처리")
+        
+        // 추가적인 UI 업데이트나 데이터 새로고침 로직
+        NotificationCenter.default.post(
+            name: NSNotification.Name("WorkoutSyncCompleted"),
+            object: nil,
+            userInfo: userInfo
+        )
+    }
+    
+    /// Sync 완료 알림 탭 시 특정 화면으로 이동
+    func handleSyncCompleteNotificationTap(_ userInfo: [AnyHashable: Any]) {
+        print("📊 운동 데이터 화면으로 이동 예정...")
+        
+        // NavigationManager나 Router를 통한 화면 이동
+        NotificationCenter.default.post(
+            name: NSNotification.Name("NavigateToWorkoutStats"),
+            object: nil,
+            userInfo: userInfo
+        )
+    }
+    
+    /// 테스트 알림 생성 및 스케줄링
+    func createAndScheduleTestNotification() {
         let content = UNMutableNotificationContent()
         content.title = "🐢 TurtleRun 테스트"
         content.subtitle = "동기화 완료!"
@@ -253,36 +270,14 @@ class PushNotificationManager: NSObject, ObservableObject {
         }
     }
     
-    /// 모든 알림 정리
-    func clearAllNotifications() {
-        UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
-        UNUserNotificationCenter.current().removeAllDeliveredNotifications()
-        
-        // iOS 16+ 호환성을 위한 배지 숫자 초기화
-        if #available(iOS 16.0, *) {
-            UNUserNotificationCenter.current().setBadgeCount(0) { error in
-                if let error = error {
-                    print("❌ 배지 초기화 실패: \(error)")
-                }
-            }
-        } else {
-            UIApplication.shared.applicationIconBadgeNumber = 0
-        }
-    }
-    
-
-    
-    // MARK: - Helper Methods
-    
     /// 한국 시간으로 포맷팅
-    private func formatKoreanTime(_ date: Date) -> String {
+    func formatKoreanTime(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
         formatter.timeZone = TimeZone(identifier: "Asia/Seoul")
         return formatter.string(from: date) + " (KST)"
     }
-    
-    }
+}
 
 // MARK: - UNUserNotificationCenterDelegate
 
