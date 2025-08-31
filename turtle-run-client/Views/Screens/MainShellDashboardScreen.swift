@@ -2,7 +2,7 @@ import SwiftUI
 
 struct MainShellDashboardScreen: View {
     @State private var showProfileMenu = false
-    @EnvironmentObject private var notificationManager: NotificationManager
+    @EnvironmentObject private var pushNotificationManager: PushNotificationManager
     
     var body: some View {
         ZStack {
@@ -45,7 +45,7 @@ struct MainShellDashboardScreen: View {
     // MARK: - Test Notification Button
     private var testNotificationButton: some View {
         Button(action: {
-            notificationManager.scheduleTestNotification()
+            pushNotificationManager.scheduleTestNotification()
         }) {
             HStack(spacing: 8) {
                 Image(systemName: "bell.fill")
@@ -74,5 +74,5 @@ struct MainShellDashboardScreen: View {
 
 #Preview {
     MainShellDashboardScreen()
-        .environmentObject(NotificationManager.shared)
+        .environmentObject(PushNotificationManager.shared)
 } 

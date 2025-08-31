@@ -1,20 +1,52 @@
 import Foundation
 import UserNotifications
 import UIKit
+import SwiftUI
+import HealthKit
 
 class PushNotificationManager: NSObject, ObservableObject {
     static let shared = PushNotificationManager()
     
     @Published var deviceToken: String?
     @Published var isNotificationAuthorized: Bool = false
+    @Published var pendingNotificationResponse: UNNotificationResponse?
     
     private override init() {
         super.init()
+        setupNotificationCenter()
+    }
+    
+    // MARK: - Setup
+    private func setupNotificationCenter() {
+        UNUserNotificationCenter.current().delegate = self
     }
     
     // MARK: - Notification Authorization
     
-    /// 푸시 알림 권한 요청 (백그라운드 알림 포함)
+    /// 알림 권한 요청 (async/await 방식)
+    func requestPermission() async -> Bool {
+        do {
+            let options: UNAuthorizationOptions = [.alert, .badge, .sound, .carPlay]
+            let granted = try await UNUserNotificationCenter.current().requestAuthorization(options: options)
+            
+            await MainActor.run {
+                self.isNotificationAuthorized = granted
+                if granted {
+                    print("✅ Push 알림 권한 승인됨")
+                    self.registerForPushNotifications()
+                } else {
+                    print("❌ Push 알림 권한 거부됨")
+                }
+            }
+            
+            return granted
+        } catch {
+            print("❌ 알림 권한 요청 실패: \(error)")
+            return false
+        }
+    }
+    
+    /// 푸시 알림 권한 요청 (백그라운드 알림 포함) - 기존 콜백 방식 유지
     func requestNotificationAuthorization() {
         // 백그라운드에서도 알림을 받을 수 있도록 모든 필요 옵션 포함
         let options: UNAuthorizationOptions = [.alert, .badge, .sound, .carPlay]
@@ -73,14 +105,18 @@ class PushNotificationManager: NSObject, ObservableObject {
         print("   - 내용: \(notification.request.content.body)")
         print("   - 데이터: \(userInfo)")
         
-        // Sync 완료 알림인지 확인
+        // Shell 동기화 완료 알림인지 확인 (통일된 타입 사용)
         if let notificationType = userInfo["type"] as? String,
-           notificationType == "sync_complete" {
+           (notificationType == "sync_complete" || notificationType == "shell_sync_completed") {
             handleSyncCompleteNotification(userInfo)
         }
         
-        // 포그라운드에서도 알림 표시
-        return [.alert, .badge, .sound]
+        // 포그라운드에서도 알림 표시 (iOS 14+ 호환성)
+        if #available(iOS 14.0, *) {
+            return [.banner, .badge, .sound]
+        } else {
+            return [.alert, .badge, .sound]
+        }
     }
     
     /// 알림 탭 시 처리
@@ -91,9 +127,9 @@ class PushNotificationManager: NSObject, ObservableObject {
         print("   - 액션: \(response.actionIdentifier)")
         print("   - 데이터: \(userInfo)")
         
-        // Sync 완료 알림 탭 처리
+        // Shell 동기화 완료 알림 탭 처리 (통일된 타입 사용)
         if let notificationType = userInfo["type"] as? String,
-           notificationType == "sync_complete" {
+           (notificationType == "sync_complete" || notificationType == "shell_sync_completed") {
             handleSyncCompleteNotificationTap(userInfo)
         }
     }
@@ -116,12 +152,122 @@ class PushNotificationManager: NSObject, ObservableObject {
     private func handleSyncCompleteNotificationTap(_ userInfo: [AnyHashable: Any]) {
         print("📊 운동 데이터 화면으로 이동 예정...")
         
-        // 추후 NavigationManager나 Router를 통해 특정 화면 이동 구현
+        // UI 업데이트를 위한 pendingNotificationResponse 설정
+        // 실제 알림 응답이 있을 때만 처리하므로 임시 생성 제거
+        
+        // NavigationManager나 Router를 통한 화면 이동
         NotificationCenter.default.post(
             name: NSNotification.Name("NavigateToWorkoutStats"),
             object: nil,
             userInfo: userInfo
         )
+    }
+    
+    // MARK: - Local Notification Scheduling
+    
+    /// Shell 동기화 완료 알림 스케줄링
+    func scheduleShellSyncCompletionNotification(workoutData: WorkoutDetailedData) {
+        let content = UNMutableNotificationContent()
+        content.title = "🐢 TurtleRun"
+        content.subtitle = "동기화 완료!"
+        content.body = "새로운 Shell이 추가되었습니다. \(workoutData.formattedDistance), \(workoutData.formattedDuration)"
+        content.sound = .default
+        content.badge = 1
+        
+        // 사용자 정의 데이터 추가 (통일된 타입 사용)
+        content.userInfo = [
+            "type": "shell_sync_completed",
+            "workout_start_date": workoutData.startDate.timeIntervalSince1970,
+            "workout_duration": workoutData.duration,
+            "workout_distance": workoutData.totalDistance,
+            "workout_calories": workoutData.totalEnergyBurned
+        ]
+        
+        // 즉시 트리거 (실제로는 서버 동기화 완료 후 호출)
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+        
+        let request = UNNotificationRequest(
+            identifier: "shell_sync_\(UUID().uuidString)",
+            content: content,
+            trigger: trigger
+        )
+        
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                print("❌ Shell 동기화 알림 스케줄링 실패: \(error)")
+            } else {
+                print("✅ Shell 동기화 완료 알림이 스케줄되었습니다.")
+            }
+        }
+    }
+    
+    /// 테스트 알림 스케줄링
+    func scheduleTestNotification() {
+        // 먼저 현재 알림 권한 상태 확인
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            print("🔔 알림 권한 상태: \(settings.authorizationStatus.rawValue)")
+            print("🔔 Alert 설정: \(settings.alertSetting.rawValue)")
+            print("🔔 Sound 설정: \(settings.soundSetting.rawValue)")
+            print("🔔 Badge 설정: \(settings.badgeSetting.rawValue)")
+            
+            DispatchQueue.main.async {
+                if settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional {
+                    self.createAndScheduleTestNotification()
+                } else {
+                    print("❌ 알림 권한이 없습니다. 설정에서 권한을 허용해주세요.")
+                }
+            }
+        }
+    }
+    
+    private func createAndScheduleTestNotification() {
+        let content = UNMutableNotificationContent()
+        content.title = "🐢 TurtleRun 테스트"
+        content.subtitle = "동기화 완료!"
+        content.body = "새로운 Shell이 추가되었습니다. 5.2km, 32:15"
+        content.sound = .default
+        content.badge = 1
+        
+        content.userInfo = [
+            "type": "shell_sync_completed",
+            "workout_start_date": Date().addingTimeInterval(-3600).timeIntervalSince1970,
+            "workout_duration": 1935.0, // 32분 15초
+            "workout_distance": 5200.0,  // 5.2km
+            "workout_calories": 380.0
+        ]
+        
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 2, repeats: false)
+        
+        let request = UNNotificationRequest(
+            identifier: "test_shell_sync",
+            content: content,
+            trigger: trigger
+        )
+        
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                print("❌ 테스트 알림 스케줄링 실패: \(error)")
+            } else {
+                print("✅ 테스트 알림이 2초 후에 표시됩니다.")
+            }
+        }
+    }
+    
+    /// 모든 알림 정리
+    func clearAllNotifications() {
+        UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
+        UNUserNotificationCenter.current().removeAllDeliveredNotifications()
+        
+        // iOS 16+ 호환성을 위한 배지 숫자 초기화
+        if #available(iOS 16.0, *) {
+            UNUserNotificationCenter.current().setBadgeCount(0) { error in
+                if let error = error {
+                    print("❌ 배지 초기화 실패: \(error)")
+                }
+            }
+        } else {
+            UIApplication.shared.applicationIconBadgeNumber = 0
+        }
     }
     
 
@@ -159,6 +305,43 @@ extension PushNotificationManager: UNUserNotificationCenterDelegate {
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         handleNotificationResponse(response)
+        
+        // UI 업데이트를 위한 추가 처리
+        let userInfo = response.notification.request.content.userInfo
+        if let type = userInfo["type"] as? String,
+           (type == "sync_complete" || type == "shell_sync_completed") {
+            DispatchQueue.main.async {
+                self.pendingNotificationResponse = response
+            }
+        }
+        
         completionHandler()
     }
-} 
+}
+
+// MARK: - WorkoutDetailedData Extension for Notification
+extension WorkoutDetailedData {
+    static func fromNotificationUserInfo(_ userInfo: [AnyHashable: Any]) -> WorkoutDetailedData? {
+        guard let startDateInterval = userInfo["workout_start_date"] as? TimeInterval,
+              let duration = userInfo["workout_duration"] as? TimeInterval,
+              let distance = userInfo["workout_distance"] as? Double,
+              let calories = userInfo["workout_calories"] as? Double else {
+            return nil
+        }
+        
+        let startDate = Date(timeIntervalSince1970: startDateInterval)
+        let endDate = startDate.addingTimeInterval(duration)
+        
+        let workout = HKWorkout(
+            activityType: .running,
+            start: startDate,
+            end: endDate,
+            duration: duration,
+            totalEnergyBurned: HKQuantity(unit: .kilocalorie(), doubleValue: calories),
+            totalDistance: HKQuantity(unit: .meter(), doubleValue: distance),
+            metadata: nil
+        )
+        
+        return WorkoutDetailedData(workout: workout)
+    }
+}

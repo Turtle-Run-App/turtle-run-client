@@ -4,8 +4,6 @@ import UserNotifications
 
 @main
 struct TurtleRunApp: App {
-    // @StateObject private var notificationManager = NotificationManager.shared
-    
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var workoutDataService = WorkoutDataService()
     @StateObject private var pushNotificationManager = PushNotificationManager.shared
@@ -31,14 +29,11 @@ struct TurtleRunApp: App {
                 .environmentObject(pushNotificationManager)
                 .onAppear {
                     setupPushNotifications()
+                    // 앱 시작 시 알림 권한 요청 (async/await 방식)
+                    Task {
+                        await pushNotificationManager.requestPermission()
+                    }
                 }
-                // .environmentObject(notificationManager)
-                // .onAppear {
-                //     // 앱 시작 시 알림 권한 요청
-                //     Task {
-                //         await notificationManager.requestPermission()
-                //     }
-                // }
         }
         .modelContainer(sharedModelContainer)
         .onChange(of: scenePhase) { oldPhase, newPhase in
@@ -103,10 +98,8 @@ struct TurtleRunApp: App {
     private func setupPushNotifications() {
         print("🔔 알림 권한 설정 시작...")
         
-        // UNUserNotificationCenter delegate 설정
-        UNUserNotificationCenter.current().delegate = pushNotificationManager
-        
-        // 알림 권한 요청
+        // UNUserNotificationCenter delegate는 PushNotificationManager 생성자에서 자동 설정됨
+        // 기존 콜백 방식 권한 요청도 유지 (호환성을 위해)
         pushNotificationManager.requestNotificationAuthorization()
     }
 }
