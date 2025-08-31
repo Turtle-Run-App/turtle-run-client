@@ -13,7 +13,9 @@ class HealthKitManager {
     
     private init() {}
     
-    // HealthKit 권한 요청
+    // MARK: - Public Interface
+    
+    /// HealthKit 권한 요청
     func requestAuthorization(completion: @escaping (Bool, Error?) -> Void) {
         let typesToRead: Set = [
             HKObjectType.workoutType(),
@@ -102,39 +104,7 @@ class HealthKitManager {
         disableBackgroundDelivery()
     }
     
-    /// 백그라운드에서도 HealthKit 데이터 변경사항을 감지할 수 있도록 설정
-    private func enableBackgroundDelivery() {
-        let workoutType = HKObjectType.workoutType()
-        
-        print("🌙 백그라운드 딜리버리 활성화 시도...")
-        
-        healthStore.enableBackgroundDelivery(for: workoutType, frequency: .immediate) { success, error in
-            DispatchQueue.main.async {
-                if let error = error {
-                    print("❌ 백그라운드 딜리버리 활성화 실패: \(error.localizedDescription)")
-                } else if success {
-                    print("✅ 백그라운드 딜리버리 활성화 성공")
-                } else {
-                    print("⚠️ 백그라운드 딜리버리 활성화 실패 (이유 불명)")
-                }
-            }
-        }
-    }
-    
-    /// 백그라운드 딜리버리 비활성화
-    private func disableBackgroundDelivery() {
-        let workoutType = HKObjectType.workoutType()
-        
-        healthStore.disableBackgroundDelivery(for: workoutType) { success, error in
-            if let error = error {
-                print("❌ 백그라운드 딜리버리 비활성화 실패: \(error.localizedDescription)")
-            } else if success {
-                print("✅ 백그라운드 딜리버리 비활성화 성공")
-            }
-        }
-    }
-    
-    // 최근 러닝 워크아웃 가져오기
+    /// 최근 러닝 워크아웃 가져오기
     func fetchRecentRunningWorkouts(limit: Int = 10, completion: @escaping ([HKWorkout]) -> Void) {
         let predicate = HKQuery.predicateForWorkouts(with: .running)
         let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
@@ -188,17 +158,7 @@ class HealthKitManager {
         healthStore.execute(query)
     }
     
-    // MARK: - Helper Methods
-    
-    /// 한국 시간으로 포맷팅
-    private func formatKoreanTime(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        formatter.timeZone = TimeZone(identifier: "Asia/Seoul")
-        return formatter.string(from: date) + " (KST)"
-    }
-    
-    // 워크아웃 내 심박수 샘플 가져오기
+    /// 워크아웃 내 심박수 샘플 가져오기
     func fetchHeartRates(for workout: HKWorkout, completion: @escaping ([HKQuantitySample]) -> Void) {
         let heartRateType = HKQuantityType.quantityType(forIdentifier: .heartRate)!
         let predicate = HKQuery.predicateForSamples(withStart: workout.startDate, end: workout.endDate, options: .strictStartDate)
@@ -307,9 +267,53 @@ class HealthKitManager {
             completion(detailedData)
         }
     }
+}
+
+// MARK: - Private Implementation
+private extension HealthKitManager {
     
-    // 스텝 데이터 가져오기
-    private func fetchSteps(for workout: HKWorkout, completion: @escaping ([HKQuantitySample]) -> Void) {
+    /// 백그라운드에서도 HealthKit 데이터 변경사항을 감지할 수 있도록 설정
+    func enableBackgroundDelivery() {
+        let workoutType = HKObjectType.workoutType()
+        
+        print("🌙 백그라운드 딜리버리 활성화 시도...")
+        
+        healthStore.enableBackgroundDelivery(for: workoutType, frequency: .immediate) { success, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    print("❌ 백그라운드 딜리버리 활성화 실패: \(error.localizedDescription)")
+                } else if success {
+                    print("✅ 백그라운드 딜리버리 활성화 성공")
+                } else {
+                    print("⚠️ 백그라운드 딜리버리 활성화 실패 (이유 불명)")
+                }
+            }
+        }
+    }
+    
+    /// 백그라운드 딜리버리 비활성화
+    func disableBackgroundDelivery() {
+        let workoutType = HKObjectType.workoutType()
+        
+        healthStore.disableBackgroundDelivery(for: workoutType) { success, error in
+            if let error = error {
+                print("❌ 백그라운드 딜리버리 비활성화 실패: \(error.localizedDescription)")
+            } else if success {
+                print("✅ 백그라운드 딜리버리 비활성화 성공")
+            }
+        }
+    }
+    
+    /// 한국 시간으로 포맷팅
+    func formatKoreanTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        formatter.timeZone = TimeZone(identifier: "Asia/Seoul")
+        return formatter.string(from: date) + " (KST)"
+    }
+    
+    /// 스텝 데이터 가져오기
+    func fetchSteps(for workout: HKWorkout, completion: @escaping ([HKQuantitySample]) -> Void) {
         let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount)!
         let predicate = HKQuery.predicateForSamples(withStart: workout.startDate, end: workout.endDate, options: .strictStartDate)
         let query = HKSampleQuery(sampleType: stepType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, samples, _ in
@@ -321,8 +325,8 @@ class HealthKitManager {
         healthStore.execute(query)
     }
     
-    // 칼로리 데이터 가져오기
-    private func fetchCalories(for workout: HKWorkout, completion: @escaping ([HKQuantitySample]) -> Void) {
+    /// 칼로리 데이터 가져오기
+    func fetchCalories(for workout: HKWorkout, completion: @escaping ([HKQuantitySample]) -> Void) {
         let calorieType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned)!
         let predicate = HKQuery.predicateForSamples(withStart: workout.startDate, end: workout.endDate, options: .strictStartDate)
         let query = HKSampleQuery(sampleType: calorieType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, samples, _ in
@@ -334,8 +338,8 @@ class HealthKitManager {
         healthStore.execute(query)
     }
     
-    // 속도 데이터 가져오기 (러닝 속도 + 걷기 속도)
-    private func fetchSpeed(for workout: HKWorkout, completion: @escaping ([HKQuantitySample]) -> Void) {
+    /// 속도 데이터 가져오기 (러닝 속도 + 걷기 속도)
+    func fetchSpeed(for workout: HKWorkout, completion: @escaping ([HKQuantitySample]) -> Void) {
         var allSpeedSamples: [HKQuantitySample] = []
         let group = DispatchGroup()
         
@@ -369,4 +373,4 @@ class HealthKitManager {
             completion(allSpeedSamples)
         }
     }
-} 
+}
