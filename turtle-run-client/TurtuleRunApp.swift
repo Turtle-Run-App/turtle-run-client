@@ -28,11 +28,7 @@ struct TurtleRunApp: App {
                 .environmentObject(workoutDataService)
                 .environmentObject(pushNotificationManager)
                 .onAppear {
-                    setupPushNotifications()
-                    // 앱 시작 시 알림 권한 요청 (async/await 방식)
-                    Task {
-                        await pushNotificationManager.requestPermission()
-                    }
+                    pushNotificationManager.requestNotificationAuthorization()
                 }
         }
         .modelContainer(sharedModelContainer)
@@ -91,15 +87,5 @@ struct TurtleRunApp: App {
                 print("⚠️ HealthKit 권한이 필요합니다")
             }
         }
-    }
-    
-    // MARK: - Push Notifications Setup
-    
-    private func setupPushNotifications() {
-        print("🔔 알림 권한 설정 시작...")
-        
-        // UNUserNotificationCenter delegate는 PushNotificationManager 생성자에서 자동 설정됨
-        // 기존 콜백 방식 권한 요청도 유지 (호환성을 위해)
-        pushNotificationManager.requestNotificationAuthorization()
     }
 }

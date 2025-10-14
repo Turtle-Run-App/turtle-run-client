@@ -16,34 +16,7 @@ class PushNotificationManager: NSObject, ObservableObject {
         setupNotificationCenter()
     }
     
-    // MARK: - Public Interface
-    
-    /// 알림 권한 요청 (async/await 방식)
-    func requestPermission() async -> Bool {
-        do {
-            let options: UNAuthorizationOptions = [.alert, .badge, .sound, .carPlay]
-            let granted = try await UNUserNotificationCenter.current().requestAuthorization(options: options)
-            
-            await MainActor.run {
-                self.isNotificationAuthorized = granted
-                if granted {
-                    print("✅ Push 알림 권한 승인됨")
-                    self.registerForPushNotifications()
-                } else {
-                    print("❌ Push 알림 권한 거부됨")
-                }
-            }
-            
-            return granted
-        } catch {
-            print("❌ 알림 권한 요청 실패: \(error)")
-            return false
-        }
-    }
-    
-    /// 푸시 알림 권한 요청 (백그라운드 알림 포함) - 기존 콜백 방식 유지
     func requestNotificationAuthorization() {
-        // 백그라운드에서도 알림을 받을 수 있도록 모든 필요 옵션 포함
         let options: UNAuthorizationOptions = [.alert, .badge, .sound, .carPlay]
         
         UNUserNotificationCenter.current().requestAuthorization(options: options) { [weak self] granted, error in
@@ -63,9 +36,6 @@ class PushNotificationManager: NSObject, ObservableObject {
         }
     }
     
-    // MARK: - Device Token Management
-    
-    /// Device Token 수신 처리  
     func didReceiveDeviceToken(_ deviceToken: Data) {
         let tokenString = deviceToken.map { String(format: "%02.2hhx", $0) }.joined()
         
