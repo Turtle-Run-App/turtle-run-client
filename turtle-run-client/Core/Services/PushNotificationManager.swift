@@ -52,9 +52,6 @@ class PushNotificationManager: NSObject, ObservableObject {
         print("❌ Push 알림 등록 실패: \(error.localizedDescription)")
     }
     
-        // MARK: - Notification Handling
-    
-    /// 앱이 활성 상태일 때 알림 수신 처리
     func handleForegroundNotification(_ notification: UNNotification) -> UNNotificationPresentationOptions {
         let userInfo = notification.request.content.userInfo
         
@@ -92,53 +89,11 @@ class PushNotificationManager: NSObject, ObservableObject {
         }
     }
     
-    // MARK: - Local Notification Scheduling
-    
-    /// Shell 동기화 완료 알림 스케줄링
-    func scheduleShellSyncCompletionNotification(workoutData: WorkoutDetailedData) {
-        let content = UNMutableNotificationContent()
-        content.title = "🐢 TurtleRun"
-        content.subtitle = "동기화 완료!"
-        content.body = "새로운 Shell이 추가되었습니다. \(workoutData.formattedDistance), \(workoutData.formattedDuration)"
-        content.sound = .default
-        content.badge = 1
-        
-        // 사용자 정의 데이터 추가 (통일된 타입 사용)
-        content.userInfo = [
-            "type": "shell_sync_completed",
-            "workout_start_date": workoutData.startDate.timeIntervalSince1970,
-            "workout_duration": workoutData.duration,
-            "workout_distance": workoutData.totalDistance,
-            "workout_calories": workoutData.totalEnergyBurned
-        ]
-        
-        // 즉시 트리거 (실제로는 서버 동기화 완료 후 호출)
-        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
-        
-        let request = UNNotificationRequest(
-            identifier: "shell_sync_\(UUID().uuidString)",
-            content: content,
-            trigger: trigger
-        )
-        
-        UNUserNotificationCenter.current().add(request) { error in
-            if let error = error {
-                print("❌ Shell 동기화 알림 스케줄링 실패: \(error)")
-            } else {
-                print("✅ Shell 동기화 완료 알림이 스케줄되었습니다.")
-            }
-        }
-    }
-    
     /// 테스트 알림 스케줄링
+    // TODO: 서버 측에서 알림을 트리거하는 로직 구현 시 삭제 예정
+
     func scheduleTestNotification() {
-        // 먼저 현재 알림 권한 상태 확인
         UNUserNotificationCenter.current().getNotificationSettings { settings in
-            print("🔔 알림 권한 상태: \(settings.authorizationStatus.rawValue)")
-            print("🔔 Alert 설정: \(settings.alertSetting.rawValue)")
-            print("🔔 Sound 설정: \(settings.soundSetting.rawValue)")
-            print("🔔 Badge 설정: \(settings.badgeSetting.rawValue)")
-            
             DispatchQueue.main.async {
                 if settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional {
                     self.createAndScheduleTestNotification()
