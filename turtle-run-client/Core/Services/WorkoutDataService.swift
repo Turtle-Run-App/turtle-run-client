@@ -193,6 +193,55 @@ class WorkoutDataService: ObservableObject {
         }
     }
     
+    private func postWorkoutData(_ workoutData: WorkoutDetailedData, completion: @escaping (Bool, String?) -> Void) {
+           // 워크아웃 데이터를 서버 형식으로 변환
+           let payload = createWorkoutPayload(from: workoutData)
+
+           guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else {
+               completion(false, "JSON 변환 실패")
+               return
+           }
+
+           var request = URLRequest(url: URL(string: "http://127.0.0.1/syncworkout")!)
+           request.httpMethod = "POST"
+           request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+           request.httpBody = jsonData
+
+           let task = URLSession.shared.dataTask(with: request) { data, response, error in
+               DispatchQueue.main.async {
+                   if let error = error {
+                       completion(false, error.localizedDescription)
+                   } else if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
+                       completion(false, "서버 응답 \(httpResponse.statusCode)")
+                   } else {
+                       completion(true, nil)
+                   }
+               }
+           }
+           task.resume()
+       }
+    
+    // MARK: - Helper Methods
+    private func createWorkoutPayload(from workoutData: WorkoutDetailedData) -> [String: Any] {
+        return [
+            "workoutId": workoutData.workout.uuid.uuidString,
+            "startTime": ISO8601DateFormatter().string(from: workoutData.startDate),
+            "endTime": ISO8601DateFormatter().string(from: workoutData.endDate),
+            "workoutType": "running",
+            "distance": workoutData.totalDistance,
+            "duration": Int(workoutData.duration),
+            "calories": Int(workoutData.totalEnergyBurned),
+            "avgHeartRate": Int(workoutData.averageHeartRate),
+            "route": workoutData.routePoints.map { point in
+                [
+                    "latitude": point.latitude,
+                    "longitude": point.longitude,
+                    "timestamp": ISO8601DateFormatter().string(from: point.timestamp)
+                ]
+            }
+        ]
+    }
+    
     private func syncAllWorkoutData(workouts: [HKWorkout]) {
         // TODO: Bulk Sync API 구현 후 수정 예정
         let group = DispatchGroup()

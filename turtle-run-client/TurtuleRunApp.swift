@@ -4,8 +4,6 @@ import UserNotifications
 
 @main
 struct TurtleRunApp: App {
-    // @StateObject private var notificationManager = NotificationManager.shared
-    
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var workoutDataService = WorkoutDataService()
     @StateObject private var pushNotificationManager = PushNotificationManager.shared
@@ -30,15 +28,8 @@ struct TurtleRunApp: App {
                 .environmentObject(workoutDataService)
                 .environmentObject(pushNotificationManager)
                 .onAppear {
-                    setupPushNotifications()
+                    pushNotificationManager.requestNotificationAuthorization()
                 }
-                // .environmentObject(notificationManager)
-                // .onAppear {
-                //     // 앱 시작 시 알림 권한 요청
-                //     Task {
-                //         await notificationManager.requestPermission()
-                //     }
-                // }
         }
         .modelContainer(sharedModelContainer)
         .onChange(of: scenePhase) { oldPhase, newPhase in
@@ -96,17 +87,5 @@ struct TurtleRunApp: App {
                 print("⚠️ HealthKit 권한이 필요합니다")
             }
         }
-    }
-    
-    // MARK: - Push Notifications Setup
-    
-    private func setupPushNotifications() {
-        print("🔔 알림 권한 설정 시작...")
-        
-        // UNUserNotificationCenter delegate 설정
-        UNUserNotificationCenter.current().delegate = pushNotificationManager
-        
-        // 알림 권한 요청
-        pushNotificationManager.requestNotificationAuthorization()
     }
 }

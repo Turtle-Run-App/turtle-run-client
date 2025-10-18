@@ -1,22 +1,22 @@
 import Foundation
 import UserNotifications
 import UIKit
+import SwiftUI
+import HealthKit
 
 class PushNotificationManager: NSObject, ObservableObject {
     static let shared = PushNotificationManager()
     
     @Published var deviceToken: String?
     @Published var isNotificationAuthorized: Bool = false
+    @Published var pendingNotificationResponse: UNNotificationResponse?
     
     private override init() {
         super.init()
+        setupNotificationCenter()
     }
     
-    // MARK: - Notification Authorization
-    
-    /// 푸시 알림 권한 요청 (백그라운드 알림 포함)
     func requestNotificationAuthorization() {
-        // 백그라운드에서도 알림을 받을 수 있도록 모든 필요 옵션 포함
         let options: UNAuthorizationOptions = [.alert, .badge, .sound, .carPlay]
         
         UNUserNotificationCenter.current().requestAuthorization(options: options) { [weak self] granted, error in
@@ -36,16 +36,6 @@ class PushNotificationManager: NSObject, ObservableObject {
         }
     }
     
-    /// Push 알림 등록
-    private func registerForPushNotifications() {
-        DispatchQueue.main.async {
-            UIApplication.shared.registerForRemoteNotifications()
-        }
-    }
-    
-    // MARK: - Device Token Management
-    
-    /// Device Token 수신 처리  
     func didReceiveDeviceToken(_ deviceToken: Data) {
         let tokenString = deviceToken.map { String(format: "%02.2hhx", $0) }.joined()
         
@@ -62,9 +52,6 @@ class PushNotificationManager: NSObject, ObservableObject {
         print("❌ Push 알림 등록 실패: \(error.localizedDescription)")
     }
     
-        // MARK: - Notification Handling
-    
-    /// 앱이 활성 상태일 때 알림 수신 처리
     func handleForegroundNotification(_ notification: UNNotification) -> UNNotificationPresentationOptions {
         let userInfo = notification.request.content.userInfo
         
@@ -73,14 +60,18 @@ class PushNotificationManager: NSObject, ObservableObject {
         print("   - 내용: \(notification.request.content.body)")
         print("   - 데이터: \(userInfo)")
         
-        // Sync 완료 알림인지 확인
+        // Shell 동기화 완료 알림인지 확인 (통일된 타입 사용)
         if let notificationType = userInfo["type"] as? String,
-           notificationType == "sync_complete" {
+           (notificationType == "sync_complete" || notificationType == "shell_sync_completed") {
             handleSyncCompleteNotification(userInfo)
         }
         
-        // 포그라운드에서도 알림 표시
-        return [.alert, .badge, .sound]
+        // 포그라운드에서도 알림 표시 (iOS 14+ 호환성)
+        if #available(iOS 14.0, *) {
+            return [.banner, .badge, .sound]
+        } else {
+            return [.alert, .badge, .sound]
+        }
     }
     
     /// 알림 탭 시 처리
@@ -91,55 +82,47 @@ class PushNotificationManager: NSObject, ObservableObject {
         print("   - 액션: \(response.actionIdentifier)")
         print("   - 데이터: \(userInfo)")
         
-        // Sync 완료 알림 탭 처리
+        // Shell 동기화 완료 알림 탭 처리 (통일된 타입 사용)
         if let notificationType = userInfo["type"] as? String,
-           notificationType == "sync_complete" {
+           (notificationType == "sync_complete" || notificationType == "shell_sync_completed") {
             handleSyncCompleteNotificationTap(userInfo)
         }
     }
     
-    // MARK: - Sync Complete Notification Handling
-    
-    /// Sync 완료 알림 처리 로직
-    private func handleSyncCompleteNotification(_ userInfo: [AnyHashable: Any]) {
-        print("🏃‍♂️ 운동 데이터 동기화 완료 알림 처리")
-        
-        // 추가적인 UI 업데이트나 데이터 새로고침 로직
-        NotificationCenter.default.post(
-            name: NSNotification.Name("WorkoutSyncCompleted"),
-            object: nil,
-            userInfo: userInfo
-        )
-    }
-    
-    /// Sync 완료 알림 탭 시 특정 화면으로 이동
-    private func handleSyncCompleteNotificationTap(_ userInfo: [AnyHashable: Any]) {
-        print("📊 운동 데이터 화면으로 이동 예정...")
-        
-        // 추후 NavigationManager나 Router를 통해 특정 화면 이동 구현
-        NotificationCenter.default.post(
-            name: NSNotification.Name("NavigateToWorkoutStats"),
-            object: nil,
-            userInfo: userInfo
-        )
-    }
-    
+    /// 테스트 알림 스케줄링
+    // TODO: 서버 측에서 알림을 트리거하는 로직 구현 시 삭제 예정
 
-    
-    // MARK: - Helper Methods
-    
-    /// 한국 시간으로 포맷팅
-    private func formatKoreanTime(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        formatter.timeZone = TimeZone(identifier: "Asia/Seoul")
-        return formatter.string(from: date) + " (KST)"
+    func scheduleTestNotification() {
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            DispatchQueue.main.async {
+                if settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional {
+                    self.createAndScheduleTestNotification()
+                } else {
+                    print("❌ 알림 권한이 없습니다. 설정에서 권한을 허용해주세요.")
+                }
+            }
+        }
     }
     
+    /// 모든 알림 정리
+    func clearAllNotifications() {
+        UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
+        UNUserNotificationCenter.current().removeAllDeliveredNotifications()
+        
+        // iOS 16+ 호환성을 위한 배지 숫자 초기화
+        if #available(iOS 16.0, *) {
+            UNUserNotificationCenter.current().setBadgeCount(0) { error in
+                if let error = error {
+                    print("❌ 배지 초기화 실패: \(error)")
+                }
+            }
+        } else {
+            UIApplication.shared.applicationIconBadgeNumber = 0
+        }
     }
+}
 
 // MARK: - UNUserNotificationCenterDelegate
-
 extension PushNotificationManager: UNUserNotificationCenterDelegate {
     
     /// 앱이 포그라운드에 있을 때 알림 수신
@@ -159,6 +142,125 @@ extension PushNotificationManager: UNUserNotificationCenterDelegate {
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         handleNotificationResponse(response)
+        
+        // UI 업데이트를 위한 추가 처리
+        let userInfo = response.notification.request.content.userInfo
+        if let type = userInfo["type"] as? String,
+           (type == "sync_complete" || type == "shell_sync_completed") {
+            DispatchQueue.main.async {
+                self.pendingNotificationResponse = response
+            }
+        }
+        
         completionHandler()
     }
-} 
+}
+
+// MARK: - Private Implementation
+private extension PushNotificationManager {
+    
+    /// 알림 센터 델리게이트 설정
+    func setupNotificationCenter() {
+        UNUserNotificationCenter.current().delegate = self
+    }
+    
+    /// Push 알림 등록
+    func registerForPushNotifications() {
+        DispatchQueue.main.async {
+            UIApplication.shared.registerForRemoteNotifications()
+        }
+    }
+    
+    /// Sync 완료 알림 처리 로직
+    func handleSyncCompleteNotification(_ userInfo: [AnyHashable: Any]) {
+        print("🏃‍♂️ 운동 데이터 동기화 완료 알림 처리")
+        
+        // 추가적인 UI 업데이트나 데이터 새로고침 로직
+        NotificationCenter.default.post(
+            name: NSNotification.Name("WorkoutSyncCompleted"),
+            object: nil,
+            userInfo: userInfo
+        )
+    }
+    
+    /// Sync 완료 알림 탭 시 특정 화면으로 이동
+    func handleSyncCompleteNotificationTap(_ userInfo: [AnyHashable: Any]) {
+        print("📊 운동 데이터 화면으로 이동 예정...")
+        
+        // NavigationManager나 Router를 통한 화면 이동
+        NotificationCenter.default.post(
+            name: NSNotification.Name("NavigateToWorkoutStats"),
+            object: nil,
+            userInfo: userInfo
+        )
+    }
+    
+    /// 테스트 알림 생성 및 스케줄링
+    func createAndScheduleTestNotification() {
+        let content = UNMutableNotificationContent()
+        content.title = "🐢 TurtleRun 테스트"
+        content.subtitle = "동기화 완료!"
+        content.body = "새로운 Shell이 추가되었습니다. 5.2km, 32:15"
+        content.sound = .default
+        content.badge = 1
+        
+        content.userInfo = [
+            "type": "shell_sync_completed",
+            "workout_start_date": Date().addingTimeInterval(-3600).timeIntervalSince1970,
+            "workout_duration": 1935.0, // 32분 15초
+            "workout_distance": 5200.0,  // 5.2km
+            "workout_calories": 380.0
+        ]
+        
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 2, repeats: false)
+        
+        let request = UNNotificationRequest(
+            identifier: "test_shell_sync",
+            content: content,
+            trigger: trigger
+        )
+        
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                print("❌ 테스트 알림 스케줄링 실패: \(error)")
+            } else {
+                print("✅ 테스트 알림이 2초 후에 표시됩니다.")
+            }
+        }
+    }
+    
+    /// 한국 시간으로 포맷팅
+    func formatKoreanTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        formatter.timeZone = TimeZone(identifier: "Asia/Seoul")
+        return formatter.string(from: date) + " (KST)"
+    }
+}
+
+// MARK: - WorkoutDetailedData Extension for Notification
+extension WorkoutDetailedData {
+    static func fromNotificationUserInfo(_ userInfo: [AnyHashable: Any]) -> WorkoutDetailedData? {
+        guard let startDateInterval = userInfo["workout_start_date"] as? TimeInterval,
+              let duration = userInfo["workout_duration"] as? TimeInterval,
+              let distance = userInfo["workout_distance"] as? Double,
+              let calories = userInfo["workout_calories"] as? Double else {
+            return nil
+        }
+        
+        let startDate = Date(timeIntervalSince1970: startDateInterval)
+        let endDate = startDate.addingTimeInterval(duration)
+        
+        let workout = HKWorkout(
+            activityType: .running,
+            start: startDate,
+            end: endDate,
+            duration: duration,
+            totalEnergyBurned: HKQuantity(unit: .kilocalorie(), doubleValue: calories),
+            totalDistance: HKQuantity(unit: .meter(), doubleValue: distance),
+            metadata: nil
+        )
+        
+        return WorkoutDetailedData(workout: workout)
+    }
+}

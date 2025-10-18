@@ -2,7 +2,9 @@ import SwiftUI
 
 struct MainShellDashboardScreen: View {
     @State private var showProfileMenu = false
-    @EnvironmentObject private var notificationManager: NotificationManager
+
+    // TODO: 테스트 버튼 삭제 시 삭제 예정
+    @EnvironmentObject private var pushNotificationManager: PushNotificationManager
     
     var body: some View {
         ZStack {
@@ -23,7 +25,7 @@ struct MainShellDashboardScreen: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             
-            // 테스트 버튼 (개발용)
+            // 테스트 버튼 (기능 구현 시 삭제 예정)
             VStack {
                 Spacer()
                 HStack {
@@ -45,7 +47,7 @@ struct MainShellDashboardScreen: View {
     // MARK: - Test Notification Button
     private var testNotificationButton: some View {
         Button(action: {
-            notificationManager.scheduleTestNotification()
+            pushNotificationManager.scheduleTestNotification()
         }) {
             HStack(spacing: 8) {
                 Image(systemName: "bell.fill")
@@ -74,5 +76,5 @@ struct MainShellDashboardScreen: View {
 
 #Preview {
     MainShellDashboardScreen()
-        .environmentObject(NotificationManager.shared)
+        .environmentObject(PushNotificationManager.shared)
 } 
